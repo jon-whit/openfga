@@ -6,6 +6,7 @@ import (
 	"os"
 	"path"
 	"runtime"
+	"sort"
 	"testing"
 
 	"github.com/golang/mock/gomock"
@@ -23,6 +24,7 @@ import (
 	"github.com/openfga/openfga/storage/postgres"
 	teststorage "github.com/openfga/openfga/storage/test"
 	"github.com/stretchr/testify/require"
+	openfgav1 "go.buf.build/openfga/go/openfga/api/openfga/v1"
 )
 
 func init() {
@@ -92,6 +94,277 @@ func BenchmarkOpenFGAServer(b *testing.B) {
 			return ds, nil
 		}))
 	})
+}
+
+func TestIntersection(t *testing.T) {
+	a := []string{"a"}
+	b := []string{"a", "b"}
+	c := []string{"a", "c"}
+
+	require.Equal(t, []string{"a"}, intersect(a, b, c))
+
+	a = []string{"a", "b"}
+	b = []string{"a"}
+
+	require.Equal(t, []string{"a"}, intersection(a, b))
+}
+
+func TestExpandUsers(t *testing.T) {
+
+	tracer := telemetry.NewNoopTracer()
+	logger := logger.NewNoopLogger()
+	transport := gateway.NewNoopTransport()
+
+	testEngine := storagefixtures.RunOpenFGADatastoreTestEngine(t, "memory")
+	datastore := testEngine.NewDatastore(t, func(engine, uri string) storage.OpenFGADatastore {
+		return memory.New(telemetry.NewNoopTracer(), 10, 24)
+	})
+
+	store := "store1"
+	_, err := datastore.CreateStore(context.Background(), &openfgav1.Store{
+		Id: store,
+	})
+	require.NoError(t, err)
+
+	modelID, err := id.NewString()
+	require.NoError(t, err)
+
+	err = datastore.WriteAuthorizationModel(context.Background(), store, modelID, &openfgav1.TypeDefinitions{
+		TypeDefinitions: []*openfgav1.TypeDefinition{
+			{
+				Type: "group",
+				Relations: map[string]*openfgav1.Userset{
+					"member": {
+						Userset: &openfgav1.Userset_This{},
+					},
+				},
+			},
+			{
+				Type: "team",
+				Relations: map[string]*openfgav1.Userset{
+					"owner": {
+						Userset: &openfgav1.Userset_This{},
+					},
+					"member": {
+						Userset: &openfgav1.Userset_Union{
+							Union: &openfgav1.Usersets{
+								Child: []*openfgav1.Userset{
+									{
+										Userset: &openfgav1.Userset_ComputedUserset{
+
+											ComputedUserset: &openfgav1.ObjectRelation{
+												Relation: "owner",
+											},
+										},
+									},
+									{
+										Userset: &openfgav1.Userset_This{},
+									},
+								},
+							},
+						},
+					},
+					"coordinator": {
+						Userset: &openfgav1.Userset_Union{
+							Union: &openfgav1.Usersets{
+								Child: []*openfgav1.Userset{
+									{
+										Userset: &openfgav1.Userset_This{},
+									},
+									{
+										Userset: &openfgav1.Userset_ComputedUserset{
+											ComputedUserset: &openfgav1.ObjectRelation{
+												Relation: "owner",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+					"ambassador": {
+						Userset: &openfgav1.Userset_Difference{
+							Difference: &openfgav1.Difference{
+								Base: &openfgav1.Userset{
+									Userset: &openfgav1.Userset_ComputedUserset{
+										ComputedUserset: &openfgav1.ObjectRelation{
+											Relation: "member",
+										},
+									},
+								},
+								Subtract: &openfgav1.Userset{
+									Userset: &openfgav1.Userset_ComputedUserset{
+										ComputedUserset: &openfgav1.ObjectRelation{
+											Relation: "limited",
+										},
+									},
+								},
+							},
+						},
+					},
+					"limited": {
+						Userset: &openfgav1.Userset_This{},
+					},
+					"seller": {
+						Userset: &openfgav1.Userset_Intersection{
+							Intersection: &openfgav1.Usersets{
+								Child: []*openfgav1.Userset{
+									{
+										Userset: &openfgav1.Userset_ComputedUserset{
+											ComputedUserset: &openfgav1.ObjectRelation{
+												Relation: "owner",
+											},
+										},
+									},
+									{
+										Userset: &openfgav1.Userset_ComputedUserset{
+											ComputedUserset: &openfgav1.ObjectRelation{
+												Relation: "approved",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+					"approved": {
+						Userset: &openfgav1.Userset_This{},
+					},
+				},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	datastore.Write(context.Background(), store, nil, []*openfgav1.TupleKey{
+		{
+			Object:   "group:engineering",
+			Relation: "member",
+			User:     "group:fga#member",
+		},
+		{
+			Object:   "group:engineering",
+			Relation: "member",
+			User:     "vittorio",
+		},
+		{
+			Object:   "group:fga",
+			Relation: "member",
+			User:     "jon",
+		},
+		{
+			Object:   "group:fga",
+			Relation: "member",
+			User:     "andres",
+		},
+		{
+			Object:   "team:jazz",
+			Relation: "owner",
+			User:     "larry",
+		},
+		{
+			Object:   "team:jazz",
+			Relation: "owner",
+			User:     "tim",
+		},
+		{
+			Object:   "team:jazz",
+			Relation: "approved",
+			User:     "larry",
+		},
+		{
+			Object:   "team:jazz",
+			Relation: "coordinator",
+			User:     "jon",
+		},
+		{
+			Object:   "team:jazz",
+			Relation: "member",
+			User:     "jill",
+		},
+		{
+			Object:   "team:jazz",
+			Relation: "limited",
+			User:     "jill",
+		},
+	})
+
+	s := Server{
+		datastore: datastore,
+		tracer:    tracer,
+		transport: transport,
+		logger:    logger,
+	}
+
+	users, err := s.expandUsers(store, modelID, "group:engineering#member")
+	require.NoError(t, err)
+
+	sort.Slice(users, func(i, j int) bool {
+		if users[i] <= users[j] {
+			return true
+		}
+		return false
+	})
+
+	expected := []string{"vittorio", "jon", "andres"}
+	sort.Slice(expected, func(i, j int) bool {
+		if expected[i] <= expected[j] {
+			return true
+		}
+		return false
+	})
+
+	require.Equal(t, expected, users)
+
+	users, err = s.expandUsers(store, modelID, "team:jazz#member")
+	require.NoError(t, err)
+
+	sort.Slice(users, func(i, j int) bool {
+		if users[i] <= users[j] {
+			return true
+		}
+		return false
+	})
+
+	expected = []string{"larry", "jill", "tim"}
+	sort.Slice(expected, func(i, j int) bool {
+		if expected[i] <= expected[j] {
+			return true
+		}
+		return false
+	})
+
+	require.Equal(t, expected, users)
+
+	users, err = s.expandUsers(store, modelID, "team:jazz#coordinator")
+	require.NoError(t, err)
+
+	sort.Slice(users, func(i, j int) bool {
+		if users[i] <= users[j] {
+			return true
+		}
+		return false
+	})
+
+	expected = []string{"larry", "tim", "jon"}
+	sort.Slice(expected, func(i, j int) bool {
+		if expected[i] <= expected[j] {
+			return true
+		}
+		return false
+	})
+
+	require.Equal(t, expected, users)
+
+	users, err = s.expandUsers(store, modelID, "team:jazz#ambassador")
+	require.NoError(t, err)
+
+	require.Equal(t, []string{"larry", "tim"}, users)
+
+	users, err = s.expandUsers(store, modelID, "team:jazz#seller")
+	require.NoError(t, err)
+
+	require.Equal(t, []string{"larry"}, users)
 }
 
 func TestResolveAuthorizationModel(t *testing.T) {

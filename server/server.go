@@ -17,6 +17,7 @@ import (
 	"github.com/openfga/openfga/pkg/encoder"
 	"github.com/openfga/openfga/pkg/id"
 	"github.com/openfga/openfga/pkg/logger"
+	"github.com/openfga/openfga/pkg/tuple"
 	"github.com/openfga/openfga/server/commands"
 	serverErrors "github.com/openfga/openfga/server/errors"
 	"github.com/openfga/openfga/server/gateway"
@@ -271,6 +272,217 @@ func (s *Server) Expand(ctx context.Context, req *openfgapb.ExpandRequest) (*ope
 		AuthorizationModelId: modelID,
 		TupleKey:             tk,
 	})
+}
+
+func (s *Server) expandUsers(storeID, modelID, user string) ([]string, error) {
+
+	if !tuple.IsObjectRelation(user) {
+		return []string{user}, nil
+	}
+
+	ctx := context.Background()
+	modelID, err := s.resolveAuthorizationModelID(ctx, storeID, modelID)
+	if err != nil {
+		return nil, err
+	}
+
+	object, relation := tuple.SplitObjectRelation(user)
+
+	query := commands.NewExpandQuery(s.datastore, s.tracer, s.logger)
+	resp, err := query.Execute(context.Background(), &openfgapb.ExpandRequest{
+		StoreId:              storeID,
+		AuthorizationModelId: modelID,
+		TupleKey: &openfgapb.TupleKey{
+			Object:   object,
+			Relation: relation,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	users, err := s.expandUsersetTreeNode(query, storeID, modelID, resp.GetTree().GetRoot())
+	return users, err
+}
+
+func (s *Server) expandUsersetTreeNode(query *commands.ExpandQuery, storeID, modelID string, node *openfgapb.UsersetTree_Node) ([]string, error) {
+
+	var users []string
+
+	switch node := node.Value.(type) {
+
+	case *openfgapb.UsersetTree_Node_Leaf:
+		users := node.Leaf.GetUsers().GetUsers()
+		if users != nil {
+			var expanded []string
+			for _, user := range users {
+				// these can be recursively expanded (concurrently)
+				if !tuple.IsObjectRelation(user) {
+					expanded = append(expanded, user)
+					continue
+				}
+
+				object, relation := tuple.SplitObjectRelation(user)
+
+				resp, err := query.Execute(context.Background(), &openfgapb.ExpandRequest{
+					StoreId:              storeID,
+					AuthorizationModelId: modelID,
+					TupleKey: &openfgapb.TupleKey{
+						Object:   object,
+						Relation: relation,
+					},
+				})
+				if err != nil {
+					return nil, err
+				}
+
+				u, err := s.expandUsersetTreeNode(query, storeID, modelID, resp.GetTree().GetRoot())
+				if err != nil {
+					return nil, err
+				}
+
+				expanded = append(expanded, u...)
+			}
+
+			return expanded, nil
+		}
+
+		var userset string
+		if node.Leaf.GetComputed().GetUserset() != "" {
+			userset = node.Leaf.GetComputed().GetUserset()
+		}
+
+		object, relation := tuple.SplitObjectRelation(userset)
+
+		// todo: handle TupleToUserset
+
+		resp, err := query.Execute(context.Background(), &openfgapb.ExpandRequest{
+			StoreId:              storeID,
+			AuthorizationModelId: modelID,
+			TupleKey: &openfgapb.TupleKey{
+				Object:   object,
+				Relation: relation,
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		return s.expandUsersetTreeNode(query, storeID, modelID, resp.GetTree().GetRoot())
+
+	case *openfgapb.UsersetTree_Node_Union:
+
+		var users []string
+		for _, childNode := range node.Union.GetNodes() {
+			u, err := s.expandUsersetTreeNode(query, storeID, modelID, childNode)
+			if err != nil {
+				return nil, err
+			}
+
+			users = append(users, u...)
+		}
+
+		return users, nil
+
+	case *openfgapb.UsersetTree_Node_Intersection:
+
+		var expanded [][]string
+		for _, childNode := range node.Intersection.GetNodes() {
+			users, err := s.expandUsersetTreeNode(query, storeID, modelID, childNode)
+			if err != nil {
+				return nil, err
+			}
+
+			expanded = append(expanded, users)
+		}
+
+		return intersect(expanded...), nil
+
+	case *openfgapb.UsersetTree_Node_Difference:
+		base, err := s.expandUsersetTreeNode(query, storeID, modelID, node.Difference.Base)
+		if err != nil {
+			return nil, err
+		}
+
+		sub, err := s.expandUsersetTreeNode(query, storeID, modelID, node.Difference.Subtract)
+		if err != nil {
+			return nil, err
+		}
+
+		return difference(base, sub), nil
+
+	default:
+	}
+
+	return users, nil
+}
+
+func intersection(a []string, b []string) []string {
+	intersected := map[string]struct{}{}
+	mapset := map[string]struct{}{}
+
+	n := len(a)
+	m := len(b)
+
+	for j := 0; j < n; j++ {
+		mapset[a[j]] = struct{}{}
+	}
+
+	for j := 0; j < m; j++ {
+		if _, ok := mapset[b[j]]; ok {
+			intersected[b[j]] = struct{}{}
+		}
+	}
+
+	var c []string
+	for key := range intersected {
+		c = append(c, key)
+	}
+
+	return c
+}
+
+func intersect(slices ...[]string) []string {
+
+	var s []string
+	if len(slices) == 0 {
+		return s
+	}
+
+	if len(slices) == 1 {
+		return slices[0]
+	}
+
+	// otherwise we assume len(slices) >= 2
+
+	s = intersection(slices[0], slices[1])
+	for i := 2; i < len(slices); i++ {
+		s = intersection(s, slices[i])
+	}
+
+	return s
+}
+
+// unique returns the unique strings contained in slice a compared to slice b.
+func difference(a []string, b []string) []string {
+	set1 := make(map[string]bool)
+	for _, s := range a {
+		set1[s] = true
+	}
+
+	set2 := make(map[string]bool)
+	for _, s := range b {
+		set2[s] = true
+	}
+
+	var c []string
+	for _, s := range a {
+		if !set2[s] {
+			c = append(c, s)
+		}
+	}
+
+	return c
 }
 
 func (s *Server) ReadAuthorizationModel(ctx context.Context, req *openfgapb.ReadAuthorizationModelRequest) (*openfgapb.ReadAuthorizationModelResponse, error) {
