@@ -2,47 +2,29 @@ package server
 
 import (
 	"context"
-	"fmt"
-	"net"
+	"errors"
 	"net/http"
-	"net/netip"
-	"reflect"
 	"strconv"
 	"time"
 
-	"github.com/go-errors/errors"
-	grpc_validator "github.com/grpc-ecosystem/go-grpc-middleware/validator"
-	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"github.com/oklog/ulid/v2"
+	"github.com/openfga/openfga/internal/gateway"
+	"github.com/openfga/openfga/internal/graph"
 	httpmiddleware "github.com/openfga/openfga/internal/middleware/http"
 	"github.com/openfga/openfga/pkg/encoder"
-	"github.com/openfga/openfga/pkg/id"
 	"github.com/openfga/openfga/pkg/logger"
+	"github.com/openfga/openfga/pkg/typesystem"
 	"github.com/openfga/openfga/server/commands"
 	serverErrors "github.com/openfga/openfga/server/errors"
-	"github.com/openfga/openfga/server/gateway"
-	"github.com/openfga/openfga/server/health"
 	"github.com/openfga/openfga/storage"
-	"github.com/rs/cors"
 	openfgapb "go.buf.build/openfga/go/openfga/api/openfga/v1"
-	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/credentials/insecure"
-	healthv1pb "google.golang.org/grpc/health/grpc_health_v1"
-	"google.golang.org/grpc/reflection"
-	"google.golang.org/grpc/status"
 )
 
 const (
 	AuthorizationModelIDHeader = "openfga-authorization-model-id"
-)
-
-var (
-	ErrNilTokenEncoder = errors.Errorf("tokenEncoder must be a non-nil interface value")
-	ErrNilTransport    = errors.Errorf("transport must be a non-nil interface value")
 )
 
 // A Server implements the OpenFGA service backend as both
@@ -55,102 +37,38 @@ type Server struct {
 	logger    logger.Logger
 	datastore storage.OpenFGADatastore
 	encoder   encoder.Encoder
-	config    *Config
 	transport gateway.Transport
-
-	defaultServeMuxOpts []runtime.ServeMuxOption
+	config    *Config
 }
 
 type Dependencies struct {
-	Datastore storage.OpenFGADatastore
-	Tracer    trace.Tracer
-	Meter     metric.Meter
-	Logger    logger.Logger
-	Transport gateway.Transport
-
-	// TokenEncoder is the encoder used to encode continuation tokens for paginated views.
-	// Defaults to a base64 encoder if none is provided.
+	Datastore    storage.OpenFGADatastore
+	Tracer       trace.Tracer
+	Meter        metric.Meter
+	Logger       logger.Logger
+	Transport    gateway.Transport
 	TokenEncoder encoder.Encoder
 }
 
 type Config struct {
-	GRPCServer             GRPCServerConfig
-	HTTPServer             HTTPServerConfig
 	ResolveNodeLimit       uint32
 	ChangelogHorizonOffset int
 	ListObjectsDeadline    time.Duration
 	ListObjectsMaxResults  uint32
-	UnaryInterceptors      []grpc.UnaryServerInterceptor
-	MuxOptions             []runtime.ServeMuxOption
-}
-
-type GRPCServerConfig struct {
-	Addr      netip.AddrPort
-	TLSConfig *TLSConfig
-}
-
-type HTTPServerConfig struct {
-	Enabled            bool
-	Addr               netip.AddrPort
-	UpstreamTimeout    time.Duration
-	TLSConfig          *TLSConfig
-	CORSAllowedOrigins []string
-	CORSAllowedHeaders []string
-}
-
-type TLSConfig struct {
-	CertPath string
-	KeyPath  string
 }
 
 // New creates a new Server which uses the supplied backends
 // for managing data.
-func New(dependencies *Dependencies, config *Config) (*Server, error) {
-	tokenEncoder := dependencies.TokenEncoder
-	if tokenEncoder == nil {
-		tokenEncoder = encoder.NewBase64Encoder()
-	} else {
-		t := reflect.TypeOf(tokenEncoder)
-		if reflect.ValueOf(tokenEncoder) == reflect.Zero(t) {
-			return nil, ErrNilTokenEncoder
-		}
-	}
-
-	transport := dependencies.Transport
-	if transport == nil {
-		transport = gateway.NewRPCTransport(dependencies.Logger)
-	} else {
-		t := reflect.TypeOf(transport)
-		if reflect.ValueOf(transport) == reflect.Zero(t) {
-			return nil, ErrNilTransport
-		}
-	}
-
-	server := &Server{
+func New(dependencies *Dependencies, config *Config) *Server {
+	return &Server{
 		tracer:    dependencies.Tracer,
 		meter:     dependencies.Meter,
 		logger:    dependencies.Logger,
 		datastore: dependencies.Datastore,
-		encoder:   tokenEncoder,
-		transport: transport,
+		encoder:   dependencies.TokenEncoder,
+		transport: dependencies.Transport,
 		config:    config,
-		defaultServeMuxOpts: []runtime.ServeMuxOption{
-			runtime.WithForwardResponseOption(httpmiddleware.HTTPResponseModifier),
-			runtime.WithErrorHandler(func(c context.Context, sr *runtime.ServeMux, mm runtime.Marshaler, w http.ResponseWriter, r *http.Request, e error) {
-				intCode := serverErrors.ConvertToEncodedErrorCode(status.Convert(e))
-				httpmiddleware.CustomHTTPErrorHandler(c, w, r, serverErrors.NewEncodedError(intCode, e.Error()))
-			}),
-			runtime.WithStreamErrorHandler(func(ctx context.Context, e error) *status.Status {
-				intCode := serverErrors.ConvertToEncodedErrorCode(status.Convert(e))
-				encodedErr := serverErrors.NewEncodedError(intCode, e.Error())
-				return status.Convert(&encodedErr)
-			}),
-		},
 	}
-
-	errors.MaxStackDepth = logger.MaxDepthBacktraceStack
-
-	return server, nil
 }
 
 func (s *Server) ListObjects(ctx context.Context, req *openfgapb.ListObjectsRequest) (*openfgapb.ListObjectsResponse, error) {
@@ -163,9 +81,24 @@ func (s *Server) ListObjects(ctx context.Context, req *openfgapb.ListObjectsRequ
 	))
 	defer span.End()
 
-	modelID, err := s.resolveAuthorizationModelID(ctx, storeID, req.GetAuthorizationModelId())
+	modelID := req.GetAuthorizationModelId()
+
+	modelID, err := s.resolveAuthorizationModelID(ctx, storeID, modelID)
 	if err != nil {
 		return nil, err
+	}
+	model, err := s.datastore.ReadAuthorizationModel(ctx, storeID, modelID)
+	if err != nil {
+		return nil, serverErrors.AuthorizationModelNotFound(modelID)
+	}
+
+	typesys := typesystem.New(model)
+
+	connectObjCmd := &commands.ConnectedObjectsCommand{
+		Datastore:        s.datastore,
+		Typesystem:       typesys,
+		ResolveNodeLimit: s.config.ResolveNodeLimit,
+		Limit:            s.config.ListObjectsMaxResults,
 	}
 
 	q := &commands.ListObjectsQuery{
@@ -176,6 +109,7 @@ func (s *Server) ListObjects(ctx context.Context, req *openfgapb.ListObjectsRequ
 		ListObjectsDeadline:   s.config.ListObjectsDeadline,
 		ListObjectsMaxResults: s.config.ListObjectsMaxResults,
 		ResolveNodeLimit:      s.config.ResolveNodeLimit,
+		ConnectedObjects:      connectObjCmd.StreamedConnectedObjects,
 	}
 
 	return q.Execute(ctx, &openfgapb.ListObjectsRequest{
@@ -190,7 +124,7 @@ func (s *Server) ListObjects(ctx context.Context, req *openfgapb.ListObjectsRequ
 
 func (s *Server) StreamedListObjects(req *openfgapb.StreamedListObjectsRequest, srv openfgapb.OpenFGAService_StreamedListObjectsServer) error {
 	storeID := req.GetStoreId()
-	ctx := context.Background()
+	ctx := srv.Context()
 	ctx, span := s.tracer.Start(ctx, "streamedListObjects", trace.WithAttributes(
 		attribute.KeyValue{Key: "store", Value: attribute.StringValue(req.GetStoreId())},
 		attribute.KeyValue{Key: "objectType", Value: attribute.StringValue(req.GetType())},
@@ -201,6 +135,24 @@ func (s *Server) StreamedListObjects(req *openfgapb.StreamedListObjectsRequest, 
 	if err != nil {
 		return err
 	}
+
+	model, err := s.datastore.ReadAuthorizationModel(ctx, storeID, modelID)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return serverErrors.AuthorizationModelNotFound(req.GetAuthorizationModelId())
+		}
+		return serverErrors.HandleError("", err)
+	}
+
+	typesys := typesystem.New(model)
+
+	connectObjCmd := &commands.ConnectedObjectsCommand{
+		Datastore:        s.datastore,
+		Typesystem:       typesys,
+		ResolveNodeLimit: s.config.ResolveNodeLimit,
+		Limit:            s.config.ListObjectsMaxResults,
+	}
+
 	q := &commands.ListObjectsQuery{
 		Datastore:             s.datastore,
 		Logger:                s.logger,
@@ -209,6 +161,7 @@ func (s *Server) StreamedListObjects(req *openfgapb.StreamedListObjectsRequest, 
 		ListObjectsDeadline:   s.config.ListObjectsDeadline,
 		ListObjectsMaxResults: s.config.ListObjectsMaxResults,
 		ResolveNodeLimit:      s.config.ResolveNodeLimit,
+		ConnectedObjects:      connectObjCmd.StreamedConnectedObjects,
 	}
 
 	req.AuthorizationModelId = modelID
@@ -226,31 +179,32 @@ func (s *Server) Read(ctx context.Context, req *openfgapb.ReadRequest) (*openfga
 	))
 	defer span.End()
 
-	modelID, err := s.resolveAuthorizationModelID(ctx, store, req.GetAuthorizationModelId())
-	if err != nil {
-		return nil, err
-	}
-	span.SetAttributes(attribute.KeyValue{Key: "authorization-model-id", Value: attribute.StringValue(modelID)})
-
 	q := commands.NewReadQuery(s.datastore, s.tracer, s.logger, s.encoder)
 	return q.Execute(ctx, &openfgapb.ReadRequest{
-		StoreId:              store,
-		TupleKey:             tk,
-		AuthorizationModelId: modelID,
-		PageSize:             req.GetPageSize(),
-		ContinuationToken:    req.GetContinuationToken(),
+		StoreId:           store,
+		TupleKey:          tk,
+		PageSize:          req.GetPageSize(),
+		ContinuationToken: req.GetContinuationToken(),
 	})
 }
 
+// ReadTuples returns all tuples for a given store.
+//
+// Deprecated: Please use Read with a null tuple instead.
 func (s *Server) ReadTuples(ctx context.Context, req *openfgapb.ReadTuplesRequest) (*openfgapb.ReadTuplesResponse, error) {
+	resp, err := s.Read(ctx, &openfgapb.ReadRequest{
+		StoreId:           req.GetStoreId(),
+		PageSize:          req.GetPageSize(),
+		ContinuationToken: req.GetContinuationToken(),
+	})
+	if err != nil {
+		return nil, err
+	}
 
-	ctx, span := s.tracer.Start(ctx, "readTuples", trace.WithAttributes(
-		attribute.KeyValue{Key: "store", Value: attribute.StringValue(req.GetStoreId())},
-	))
-	defer span.End()
-
-	q := commands.NewReadTuplesQuery(s.datastore, s.logger, s.encoder)
-	return q.Execute(ctx, req)
+	return &openfgapb.ReadTuplesResponse{
+		Tuples:            resp.GetTuples(),
+		ContinuationToken: resp.GetContinuationToken(),
+	}, nil
 }
 
 func (s *Server) Write(ctx context.Context, req *openfgapb.WriteRequest) (*openfgapb.WriteResponse, error) {
@@ -272,6 +226,44 @@ func (s *Server) Write(ctx context.Context, req *openfgapb.WriteRequest) (*openf
 		Writes:               req.GetWrites(),
 		Deletes:              req.GetDeletes(),
 	})
+}
+
+func (s *Server) CheckNew(ctx context.Context, req *openfgapb.CheckRequest) (*openfgapb.CheckResponse, error) {
+	store := req.GetStoreId()
+	tk := req.GetTupleKey()
+
+	object := tk.GetObject()
+	relation := tk.GetRelation()
+	user := tk.GetUser()
+
+	ctx, span := s.tracer.Start(ctx, "check", trace.WithAttributes(
+		attribute.KeyValue{Key: "store", Value: attribute.StringValue(store)},
+		attribute.KeyValue{Key: "object", Value: attribute.StringValue(object)},
+		attribute.KeyValue{Key: "relation", Value: attribute.StringValue(relation)},
+		attribute.KeyValue{Key: "user", Value: attribute.StringValue(user)},
+	))
+	defer span.End()
+
+	model, err := s.datastore.ReadAuthorizationModel(ctx, store, req.GetAuthorizationModelId())
+	if err != nil {
+		return nil, err
+	}
+
+	span.SetAttributes(attribute.KeyValue{Key: "authorization-model-id", Value: attribute.StringValue(model.GetId())})
+
+	ctx = typesystem.ContextWithTypesystem(ctx, typesystem.New(model))
+
+	checker := graph.NewConcurrentChecker(s.datastore, 100)
+
+	checkFunc := checker.Check(ctx, req)
+
+	res, err := checkFunc(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	span.SetAttributes(attribute.KeyValue{Key: "allowed", Value: attribute.BoolValue(res.GetAllowed())})
+	return res, nil
 }
 
 func (s *Server) Check(ctx context.Context, req *openfgapb.CheckRequest) (*openfgapb.CheckResponse, error) {
@@ -482,134 +474,10 @@ func (s *Server) IsReady(ctx context.Context) (bool, error) {
 	return s.datastore.IsReady(ctx)
 }
 
-// Run starts server execution, and blocks until complete, returning any server errors. To close the
-// server cancel the provided ctx.
-func (s *Server) Run(ctx context.Context) error {
-
-	interceptors := []grpc.UnaryServerInterceptor{
-		grpc_validator.UnaryServerInterceptor(),
-	}
-	interceptors = append(interceptors, s.config.UnaryInterceptors...)
-
-	opts := []grpc.ServerOption{
-		grpc.ChainUnaryInterceptor(interceptors...),
-	}
-
-	if s.config.GRPCServer.TLSConfig != nil {
-		creds, err := credentials.NewServerTLSFromFile(s.config.GRPCServer.TLSConfig.CertPath, s.config.GRPCServer.TLSConfig.KeyPath)
-		if err != nil {
-			return err
-		}
-		opts = append(opts, grpc.Creds(creds))
-	}
-	// nosemgrep: grpc-server-insecure-connection
-	grpcServer := grpc.NewServer(opts...)
-	openfgapb.RegisterOpenFGAServiceServer(grpcServer, s)
-	healthServer := &health.Checker{TargetService: s, TargetServiceName: openfgapb.OpenFGAService_ServiceDesc.ServiceName}
-	healthv1pb.RegisterHealthServer(grpcServer, healthServer)
-	reflection.Register(grpcServer)
-
-	rpcAddr := s.config.GRPCServer.Addr
-	lis, err := net.Listen("tcp", rpcAddr.String())
-	if err != nil {
-		return err
-	}
-
-	go func() {
-		if err := grpcServer.Serve(lis); err != nil {
-			s.logger.Error("failed to start grpc server", logger.Error(err))
-		}
-	}()
-
-	s.logger.Info(fmt.Sprintf("grpc server listening on '%s'...", rpcAddr))
-
-	var httpServer *http.Server
-	if s.config.HTTPServer.Enabled {
-		// Set a request timeout.
-		runtime.DefaultContextTimeout = s.config.HTTPServer.UpstreamTimeout
-
-		dialOpts := []grpc.DialOption{
-			grpc.WithBlock(),
-			grpc.WithUnaryInterceptor(otelgrpc.UnaryClientInterceptor()),
-		}
-		if s.config.GRPCServer.TLSConfig != nil {
-			creds, err := credentials.NewClientTLSFromFile(s.config.GRPCServer.TLSConfig.CertPath, "")
-			if err != nil {
-				return err
-			}
-			dialOpts = append(dialOpts, grpc.WithTransportCredentials(creds))
-		} else {
-			dialOpts = append(dialOpts, grpc.WithTransportCredentials(insecure.NewCredentials()))
-		}
-
-		timeoutCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-		defer cancel()
-
-		conn, err := grpc.DialContext(timeoutCtx, rpcAddr.String(), dialOpts...)
-		if err != nil {
-			return err
-		}
-		defer conn.Close()
-
-		healthClient := healthv1pb.NewHealthClient(conn)
-
-		muxOpts := []runtime.ServeMuxOption{
-			runtime.WithHealthzEndpoint(healthClient),
-		}
-		muxOpts = append(muxOpts, s.defaultServeMuxOpts...) // register the defaults first
-		muxOpts = append(muxOpts, s.config.MuxOptions...)   // any provided options override defaults if they are duplicates
-
-		mux := runtime.NewServeMux(muxOpts...)
-
-		if err := openfgapb.RegisterOpenFGAServiceHandler(ctx, mux, conn); err != nil {
-			return err
-		}
-
-		httpServer = &http.Server{
-			Addr: s.config.HTTPServer.Addr.String(),
-			Handler: cors.New(cors.Options{
-				AllowedOrigins:   s.config.HTTPServer.CORSAllowedOrigins,
-				AllowCredentials: true,
-				AllowedHeaders:   s.config.HTTPServer.CORSAllowedHeaders,
-				AllowedMethods: []string{http.MethodGet, http.MethodPost,
-					http.MethodHead, http.MethodPatch, http.MethodDelete, http.MethodPut},
-			}).Handler(mux),
-		}
-
-		go func() {
-			s.logger.Info(fmt.Sprintf("HTTP server listening on '%s'...", httpServer.Addr))
-
-			var err error
-			if s.config.HTTPServer.TLSConfig != nil {
-				err = httpServer.ListenAndServeTLS(s.config.HTTPServer.TLSConfig.CertPath, s.config.HTTPServer.TLSConfig.KeyPath)
-			} else {
-				err = httpServer.ListenAndServe()
-			}
-			if err != http.ErrServerClosed {
-				s.logger.ErrorWithContext(ctx, "HTTP server closed with unexpected error", logger.Error(err))
-			}
-		}()
-	}
-
-	<-ctx.Done()
-	s.logger.InfoWithContext(ctx, "Termination signal received! Gracefully shutting down")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if httpServer != nil {
-		if err := httpServer.Shutdown(ctx); err != nil {
-			s.logger.ErrorWithContext(ctx, "HTTP server shutdown failed", logger.Error(err))
-			return err
-		}
-	}
-
-	grpcServer.GracefulStop()
-
-	return nil
-}
-
-// Util to find the latest authorization model ID to be used through all the request lifecycle.
+// resolveAuthorizationModelID takes a modelId. If it is empty, it will find and return the latest authorization model ID.
+//
+// If is not empty, it will validate it and return it.
+//
 // This allows caching of types. If the user inserts a new authorization model and doesn't
 // provide this field (which should be rate limited more aggressively) the in-flight requests won't be
 // affected and newer calls will use the updated authorization model.
@@ -619,7 +487,7 @@ func (s *Server) resolveAuthorizationModelID(ctx context.Context, store, modelID
 
 	var err error
 	if modelID != "" {
-		if !id.IsValid(modelID) {
+		if _, err := ulid.Parse(modelID); err != nil {
 			return "", serverErrors.AuthorizationModelNotFound(modelID)
 		}
 	} else {

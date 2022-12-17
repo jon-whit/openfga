@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"context"
 	"testing"
 
 	"github.com/openfga/openfga/pkg/typesystem"
@@ -18,7 +19,7 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 		expected []*RelationshipIngress
 	}{
 		{
-			name: "Direct ingress through ComputedUserset with multiple type restrictions",
+			name: "direct_ingress_through_ComputedUserset_with_multiple_type_restrictions",
 			model: &openfgapb.AuthorizationModel{
 				TypeDefinitions: []*openfgapb.TypeDefinition{
 					{
@@ -34,8 +35,8 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 							Relations: map[string]*openfgapb.RelationMetadata{
 								"editor": {
 									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										typesystem.RelationReference("user", ""),
-										typesystem.RelationReference("group", "member"),
+										typesystem.DirectRelationReference("user", ""),
+										typesystem.DirectRelationReference("group", "member"),
 									},
 								},
 							},
@@ -50,8 +51,8 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 							Relations: map[string]*openfgapb.RelationMetadata{
 								"member": {
 									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										typesystem.RelationReference("user", ""),
-										typesystem.RelationReference("group", "member"),
+										typesystem.DirectRelationReference("user", ""),
+										typesystem.DirectRelationReference("group", "member"),
 									},
 								},
 							},
@@ -59,21 +60,21 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 					},
 				},
 			},
-			target: typesystem.RelationReference("document", "viewer"),
-			source: typesystem.RelationReference("user", ""),
+			target: typesystem.DirectRelationReference("document", "viewer"),
+			source: typesystem.DirectRelationReference("user", ""),
 			expected: []*RelationshipIngress{
 				{
 					Type:    DirectIngress,
-					Ingress: typesystem.RelationReference("document", "editor"),
+					Ingress: typesystem.DirectRelationReference("document", "editor"),
 				},
 				{
 					Type:    DirectIngress,
-					Ingress: typesystem.RelationReference("group", "member"),
+					Ingress: typesystem.DirectRelationReference("group", "member"),
 				},
 			},
 		},
 		{
-			name: "Direct ingress through ComputedUserset",
+			name: "direct_ingress_through_ComputedUserset",
 			model: &openfgapb.AuthorizationModel{
 				TypeDefinitions: []*openfgapb.TypeDefinition{
 					{
@@ -89,7 +90,7 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 							Relations: map[string]*openfgapb.RelationMetadata{
 								"editor": {
 									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										typesystem.RelationReference("user", ""),
+										typesystem.DirectRelationReference("user", ""),
 									},
 								},
 							},
@@ -97,17 +98,17 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 					},
 				},
 			},
-			target: typesystem.RelationReference("document", "viewer"),
-			source: typesystem.RelationReference("user", ""),
+			target: typesystem.DirectRelationReference("document", "viewer"),
+			source: typesystem.DirectRelationReference("user", ""),
 			expected: []*RelationshipIngress{
 				{
 					Type:    DirectIngress,
-					Ingress: typesystem.RelationReference("document", "editor"),
+					Ingress: typesystem.DirectRelationReference("document", "editor"),
 				},
 			},
 		},
 		{
-			name: "Direct ingress through TupleToUserset with multiple type restrictions",
+			name: "direct_ingress_through_TupleToUserset_with_multiple_type_restrictions",
 			model: &openfgapb.AuthorizationModel{
 				TypeDefinitions: []*openfgapb.TypeDefinition{
 					{
@@ -122,7 +123,7 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 							Relations: map[string]*openfgapb.RelationMetadata{
 								"member": {
 									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										typesystem.RelationReference("user", ""),
+										typesystem.DirectRelationReference("user", ""),
 									},
 								},
 							},
@@ -137,8 +138,8 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 							Relations: map[string]*openfgapb.RelationMetadata{
 								"viewer": {
 									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										typesystem.RelationReference("user", ""),
-										typesystem.RelationReference("group", "member"),
+										typesystem.DirectRelationReference("user", ""),
+										typesystem.DirectRelationReference("group", "member"),
 									},
 								},
 							},
@@ -157,12 +158,12 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 							Relations: map[string]*openfgapb.RelationMetadata{
 								"parent": {
 									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										typesystem.RelationReference("folder", ""),
+										typesystem.DirectRelationReference("folder", ""),
 									},
 								},
 								"viewer": {
 									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										typesystem.RelationReference("user", ""),
+										typesystem.DirectRelationReference("user", ""),
 									},
 								},
 							},
@@ -170,25 +171,25 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 					},
 				},
 			},
-			target: typesystem.RelationReference("document", "viewer"),
-			source: typesystem.RelationReference("user", ""),
+			target: typesystem.DirectRelationReference("document", "viewer"),
+			source: typesystem.DirectRelationReference("user", ""),
 			expected: []*RelationshipIngress{
 				{
 					Type:    DirectIngress,
-					Ingress: typesystem.RelationReference("document", "viewer"),
+					Ingress: typesystem.DirectRelationReference("document", "viewer"),
 				},
 				{
 					Type:    DirectIngress,
-					Ingress: typesystem.RelationReference("folder", "viewer"),
+					Ingress: typesystem.DirectRelationReference("folder", "viewer"),
 				},
 				{
 					Type:    DirectIngress,
-					Ingress: typesystem.RelationReference("group", "member"),
+					Ingress: typesystem.DirectRelationReference("group", "member"),
 				},
 			},
 		},
 		{
-			name: "Direct ingress with union involving self and computed userset",
+			name: "direct_ingress_with_union_involving_self_and_computed_userset",
 			model: &openfgapb.AuthorizationModel{
 				TypeDefinitions: []*openfgapb.TypeDefinition{
 					{
@@ -206,13 +207,13 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 							Relations: map[string]*openfgapb.RelationMetadata{
 								"editor": {
 									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										typesystem.RelationReference("user", ""),
-										typesystem.RelationReference("group", "member"),
+										typesystem.DirectRelationReference("user", ""),
+										typesystem.DirectRelationReference("group", "member"),
 									},
 								},
 								"viewer": {
 									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										typesystem.RelationReference("user", ""),
+										typesystem.DirectRelationReference("user", ""),
 									},
 								},
 							},
@@ -227,8 +228,8 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 							Relations: map[string]*openfgapb.RelationMetadata{
 								"member": {
 									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										typesystem.RelationReference("user", ""),
-										typesystem.RelationReference("group", "member"),
+										typesystem.DirectRelationReference("user", ""),
+										typesystem.DirectRelationReference("group", "member"),
 									},
 								},
 							},
@@ -236,20 +237,20 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 					},
 				},
 			},
-			target: typesystem.RelationReference("document", "viewer"),
-			source: typesystem.RelationReference("user", ""),
+			target: typesystem.DirectRelationReference("document", "viewer"),
+			source: typesystem.DirectRelationReference("user", ""),
 			expected: []*RelationshipIngress{
 				{
 					Type:    DirectIngress,
-					Ingress: typesystem.RelationReference("document", "viewer"),
+					Ingress: typesystem.DirectRelationReference("document", "viewer"),
 				},
 				{
 					Type:    DirectIngress,
-					Ingress: typesystem.RelationReference("document", "editor"),
+					Ingress: typesystem.DirectRelationReference("document", "editor"),
 				},
 				{
 					Type:    DirectIngress,
-					Ingress: typesystem.RelationReference("group", "member"),
+					Ingress: typesystem.DirectRelationReference("group", "member"),
 				},
 			},
 		},
@@ -269,7 +270,7 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 							Relations: map[string]*openfgapb.RelationMetadata{
 								"member": {
 									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										typesystem.RelationReference("group", "member"),
+										typesystem.DirectRelationReference("group", "member"),
 									},
 								},
 							},
@@ -285,8 +286,8 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 							Relations: map[string]*openfgapb.RelationMetadata{
 								"member": {
 									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										typesystem.RelationReference("user", ""),
-										typesystem.RelationReference("team", "member"),
+										typesystem.DirectRelationReference("user", ""),
+										typesystem.DirectRelationReference("team", "member"),
 									},
 								},
 							},
@@ -294,12 +295,12 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 					},
 				},
 			},
-			target: typesystem.RelationReference("team", "member"),
-			source: typesystem.RelationReference("user", ""),
+			target: typesystem.DirectRelationReference("team", "member"),
+			source: typesystem.DirectRelationReference("user", ""),
 			expected: []*RelationshipIngress{
 				{
 					Type:    DirectIngress,
-					Ingress: typesystem.RelationReference("group", "member"),
+					Ingress: typesystem.DirectRelationReference("group", "member"),
 				},
 			},
 		},
@@ -323,12 +324,12 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 							Relations: map[string]*openfgapb.RelationMetadata{
 								"parent": {
 									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										typesystem.RelationReference("folder", ""),
+										typesystem.DirectRelationReference("folder", ""),
 									},
 								},
 								"viewer": {
 									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										typesystem.RelationReference("user", ""),
+										typesystem.DirectRelationReference("user", ""),
 									},
 								},
 							},
@@ -336,12 +337,12 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 					},
 				},
 			},
-			target: typesystem.RelationReference("folder", "viewer"),
-			source: typesystem.RelationReference("user", ""),
+			target: typesystem.DirectRelationReference("folder", "viewer"),
+			source: typesystem.DirectRelationReference("user", ""),
 			expected: []*RelationshipIngress{
 				{
 					Type:    DirectIngress,
-					Ingress: typesystem.RelationReference("folder", "viewer"),
+					Ingress: typesystem.DirectRelationReference("folder", "viewer"),
 				},
 			},
 		},
@@ -361,7 +362,7 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 							Relations: map[string]*openfgapb.RelationMetadata{
 								"member": {
 									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										typesystem.RelationReference("team", "member"),
+										typesystem.DirectRelationReference("team", "member"),
 									},
 								},
 							},
@@ -369,8 +370,8 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 					},
 				},
 			},
-			target:   typesystem.RelationReference("team", "member"),
-			source:   typesystem.RelationReference("user", ""),
+			target:   typesystem.DirectRelationReference("team", "member"),
+			source:   typesystem.DirectRelationReference("user", ""),
 			expected: []*RelationshipIngress{},
 		},
 		{
@@ -389,7 +390,7 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 							Relations: map[string]*openfgapb.RelationMetadata{
 								"member": {
 									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										typesystem.RelationReference("user", ""),
+										typesystem.DirectRelationReference("user", ""),
 									},
 								},
 							},
@@ -404,8 +405,8 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 							Relations: map[string]*openfgapb.RelationMetadata{
 								"viewer": {
 									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										typesystem.RelationReference("user", ""),
-										typesystem.RelationReference("group", "member"),
+										typesystem.DirectRelationReference("user", ""),
+										typesystem.DirectRelationReference("group", "member"),
 									},
 								},
 							},
@@ -421,7 +422,7 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 							Relations: map[string]*openfgapb.RelationMetadata{
 								"parent": {
 									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										typesystem.RelationReference("folder", ""),
+										typesystem.DirectRelationReference("folder", ""),
 									},
 								},
 							},
@@ -429,16 +430,16 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 					},
 				},
 			},
-			target: typesystem.RelationReference("document", "viewer"),
-			source: typesystem.RelationReference("user", ""),
+			target: typesystem.DirectRelationReference("document", "viewer"),
+			source: typesystem.DirectRelationReference("user", ""),
 			expected: []*RelationshipIngress{
 				{
 					Type:    DirectIngress,
-					Ingress: typesystem.RelationReference("folder", "viewer"),
+					Ingress: typesystem.DirectRelationReference("folder", "viewer"),
 				},
 				{
 					Type:    DirectIngress,
-					Ingress: typesystem.RelationReference("group", "member"),
+					Ingress: typesystem.DirectRelationReference("group", "member"),
 				},
 			},
 		},
@@ -458,7 +459,7 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 							Relations: map[string]*openfgapb.RelationMetadata{
 								"member": {
 									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										typesystem.RelationReference("user", ""),
+										typesystem.DirectRelationReference("user", ""),
 									},
 								},
 							},
@@ -473,8 +474,8 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 							Relations: map[string]*openfgapb.RelationMetadata{
 								"viewer": {
 									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										typesystem.RelationReference("user", ""),
-										typesystem.RelationReference("group", "member"),
+										typesystem.DirectRelationReference("user", ""),
+										typesystem.DirectRelationReference("group", "member"),
 									},
 								},
 							},
@@ -490,7 +491,7 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 							Relations: map[string]*openfgapb.RelationMetadata{
 								"parent": {
 									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										typesystem.RelationReference("folder", ""),
+										typesystem.DirectRelationReference("folder", ""),
 									},
 								},
 							},
@@ -498,12 +499,12 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 					},
 				},
 			},
-			target: typesystem.RelationReference("document", "viewer"),
-			source: typesystem.RelationReference("group", "member"),
+			target: typesystem.DirectRelationReference("document", "viewer"),
+			source: typesystem.DirectRelationReference("group", "member"),
 			expected: []*RelationshipIngress{
 				{
 					Type:    DirectIngress,
-					Ingress: typesystem.RelationReference("folder", "viewer"),
+					Ingress: typesystem.DirectRelationReference("folder", "viewer"),
 				},
 			},
 		},
@@ -523,7 +524,7 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 							Relations: map[string]*openfgapb.RelationMetadata{
 								"member": {
 									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										typesystem.RelationReference("user", ""),
+										typesystem.DirectRelationReference("user", ""),
 									},
 								},
 							},
@@ -538,8 +539,8 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 							Relations: map[string]*openfgapb.RelationMetadata{
 								"viewer": {
 									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										typesystem.RelationReference("user", ""),
-										typesystem.RelationReference("group", "member"),
+										typesystem.DirectRelationReference("user", ""),
+										typesystem.DirectRelationReference("group", "member"),
 									},
 								},
 							},
@@ -555,7 +556,7 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 							Relations: map[string]*openfgapb.RelationMetadata{
 								"parent": {
 									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										typesystem.RelationReference("folder", ""),
+										typesystem.DirectRelationReference("folder", ""),
 									},
 								},
 							},
@@ -563,13 +564,13 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 					},
 				},
 			},
-			target: typesystem.RelationReference("document", "viewer"),
-			source: typesystem.RelationReference("folder", "viewer"),
+			target: typesystem.DirectRelationReference("document", "viewer"),
+			source: typesystem.DirectRelationReference("folder", "viewer"),
 			expected: []*RelationshipIngress{
 				{
 					Type:             TupleToUsersetIngress,
-					Ingress:          typesystem.RelationReference("document", "viewer"),
-					TuplesetRelation: typesystem.RelationReference("document", "parent"),
+					Ingress:          typesystem.DirectRelationReference("document", "viewer"),
+					TuplesetRelation: typesystem.DirectRelationReference("document", "parent"),
 				},
 			},
 		},
@@ -592,7 +593,7 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 							Relations: map[string]*openfgapb.RelationMetadata{
 								"viewer": {
 									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										typesystem.RelationReference("user", ""),
+										typesystem.DirectRelationReference("user", ""),
 									},
 								},
 							},
@@ -608,8 +609,8 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 							Relations: map[string]*openfgapb.RelationMetadata{
 								"parent": {
 									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										typesystem.RelationReference("folder", ""),
-										typesystem.RelationReference("organization", ""),
+										typesystem.DirectRelationReference("folder", ""),
+										typesystem.DirectRelationReference("organization", ""),
 									},
 								},
 							},
@@ -617,12 +618,12 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 					},
 				},
 			},
-			target: typesystem.RelationReference("document", "viewer"),
-			source: typesystem.RelationReference("user", ""),
+			target: typesystem.DirectRelationReference("document", "viewer"),
+			source: typesystem.DirectRelationReference("user", ""),
 			expected: []*RelationshipIngress{
 				{
 					Type:    DirectIngress,
-					Ingress: typesystem.RelationReference("folder", "viewer"),
+					Ingress: typesystem.DirectRelationReference("folder", "viewer"),
 				},
 			},
 		},
@@ -642,8 +643,8 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 							Relations: map[string]*openfgapb.RelationMetadata{
 								"member": {
 									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										typesystem.RelationReference("user", ""),
-										typesystem.RelationReference("group", "member"),
+										typesystem.DirectRelationReference("user", ""),
+										typesystem.DirectRelationReference("group", "member"),
 									},
 								},
 							},
@@ -651,12 +652,364 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 					},
 				},
 			},
-			target: typesystem.RelationReference("group", "member"),
-			source: typesystem.RelationReference("user", ""),
+			target: typesystem.DirectRelationReference("group", "member"),
+			source: typesystem.DirectRelationReference("user", ""),
 			expected: []*RelationshipIngress{
 				{
 					Type:    DirectIngress,
-					Ingress: typesystem.RelationReference("group", "member"),
+					Ingress: typesystem.DirectRelationReference("group", "member"),
+				},
+			},
+		},
+		{
+			name: "Ingresses for non-assignable relation",
+			model: &openfgapb.AuthorizationModel{
+				TypeDefinitions: []*openfgapb.TypeDefinition{
+					{
+						Type: "organization",
+						Relations: map[string]*openfgapb.Userset{
+							"viewer":   typesystem.This(),
+							"can_view": typesystem.ComputedUserset("viewer"),
+						},
+						Metadata: &openfgapb.Metadata{
+							Relations: map[string]*openfgapb.RelationMetadata{
+								"viewer": {
+									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
+										typesystem.DirectRelationReference("organization", ""),
+									},
+								},
+							},
+						},
+					},
+					{
+						Type: "document",
+						Relations: map[string]*openfgapb.Userset{
+							"parent": typesystem.This(),
+							"view":   typesystem.TupleToUserset("parent", "can_view"),
+						},
+						Metadata: &openfgapb.Metadata{
+							Relations: map[string]*openfgapb.RelationMetadata{
+								"parent": {
+									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
+										typesystem.DirectRelationReference("organization", "viewer"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			target: typesystem.DirectRelationReference("document", "view"),
+			source: typesystem.DirectRelationReference("organization", ""),
+			expected: []*RelationshipIngress{
+				{
+					Type:    DirectIngress,
+					Ingress: typesystem.DirectRelationReference("organization", "viewer"),
+				},
+			},
+		},
+		{
+			name: "user_is_a_subset_of_user_*",
+			model: &openfgapb.AuthorizationModel{
+				TypeDefinitions: []*openfgapb.TypeDefinition{
+					{
+						Type: "user",
+					},
+					{
+						Type: "document",
+						Relations: map[string]*openfgapb.Userset{
+							"viewer": typesystem.This(),
+						},
+						Metadata: &openfgapb.Metadata{
+							Relations: map[string]*openfgapb.RelationMetadata{
+								"viewer": {
+									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
+										typesystem.WildcardRelationReference("user"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			target: typesystem.DirectRelationReference("document", "viewer"),
+			source: typesystem.DirectRelationReference("user", ""),
+			expected: []*RelationshipIngress{
+				{
+					Type:    DirectIngress,
+					Ingress: typesystem.DirectRelationReference("document", "viewer"),
+				},
+			},
+		},
+		{
+			name: "user_*_is_not_a_subset_of_user",
+			model: &openfgapb.AuthorizationModel{
+				TypeDefinitions: []*openfgapb.TypeDefinition{
+					{
+						Type: "user",
+					},
+					{
+						Type: "document",
+						Relations: map[string]*openfgapb.Userset{
+							"viewer": typesystem.This(),
+						},
+						Metadata: &openfgapb.Metadata{
+							Relations: map[string]*openfgapb.RelationMetadata{
+								"viewer": {
+									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
+										typesystem.DirectRelationReference("user", ""),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			target:   typesystem.DirectRelationReference("document", "viewer"),
+			source:   typesystem.WildcardRelationReference("user"),
+			expected: []*RelationshipIngress{},
+		},
+		{
+			name: "user_*_is_related_to_user_*",
+			model: &openfgapb.AuthorizationModel{
+				TypeDefinitions: []*openfgapb.TypeDefinition{
+					{
+						Type: "user",
+					},
+					{
+						Type: "document",
+						Relations: map[string]*openfgapb.Userset{
+							"viewer": typesystem.This(),
+						},
+						Metadata: &openfgapb.Metadata{
+							Relations: map[string]*openfgapb.RelationMetadata{
+								"viewer": {
+									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
+										typesystem.WildcardRelationReference("user"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			target: typesystem.DirectRelationReference("document", "viewer"),
+			source: typesystem.WildcardRelationReference("user"),
+			expected: []*RelationshipIngress{
+				{
+					Type:    DirectIngress,
+					Ingress: typesystem.DirectRelationReference("document", "viewer"),
+				},
+			},
+		},
+		{
+			name: "ingresses_involving_wildcard_in_types",
+			model: &openfgapb.AuthorizationModel{
+				TypeDefinitions: []*openfgapb.TypeDefinition{
+					{
+						Type: "user",
+					},
+					{
+						Type: "document",
+						Relations: map[string]*openfgapb.Userset{
+							"editor": typesystem.This(),
+							"viewer": typesystem.ComputedUserset("editor"),
+						},
+						Metadata: &openfgapb.Metadata{
+							Relations: map[string]*openfgapb.RelationMetadata{
+								"editor": {
+									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
+										typesystem.WildcardRelationReference("user"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			target: typesystem.DirectRelationReference("document", "viewer"),
+			source: typesystem.DirectRelationReference("user", ""),
+			expected: []*RelationshipIngress{
+				{
+					Type:    DirectIngress,
+					Ingress: typesystem.DirectRelationReference("document", "editor"),
+				},
+			},
+		},
+		{
+			name: "ingresses_involving_wildcard_in_source",
+			model: &openfgapb.AuthorizationModel{
+				TypeDefinitions: []*openfgapb.TypeDefinition{
+					{
+						Type: "user",
+					},
+					{
+						Type: "document",
+						Relations: map[string]*openfgapb.Userset{
+							"editor": typesystem.This(),
+							"viewer": typesystem.ComputedUserset("editor"),
+						},
+						Metadata: &openfgapb.Metadata{
+							Relations: map[string]*openfgapb.RelationMetadata{
+								"editor": {
+									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
+										typesystem.DirectRelationReference("user", ""),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			target:   typesystem.DirectRelationReference("document", "viewer"),
+			source:   typesystem.WildcardRelationReference("user"),
+			expected: []*RelationshipIngress{},
+		},
+		{
+			name: "ingresses_involving_wildcards_1",
+			model: &openfgapb.AuthorizationModel{
+				TypeDefinitions: []*openfgapb.TypeDefinition{
+					{
+						Type: "user",
+					},
+					{
+						Type: "employee",
+					},
+					{
+						Type: "group",
+					},
+					{
+						Type: "document",
+						Relations: map[string]*openfgapb.Userset{
+							"relation1": typesystem.Union(typesystem.This(), typesystem.ComputedUserset("relation2"), typesystem.ComputedUserset("relation3"), typesystem.ComputedUserset("relation4")),
+							"relation2": typesystem.This(),
+							"relation3": typesystem.This(),
+							"relation4": typesystem.This(),
+						},
+						Metadata: &openfgapb.Metadata{
+							Relations: map[string]*openfgapb.RelationMetadata{
+								"relation1": {
+									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
+										typesystem.WildcardRelationReference("user"),
+									},
+								},
+								"relation2": {
+									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
+										typesystem.WildcardRelationReference("group"),
+									},
+								},
+								"relation3": {
+									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
+										typesystem.WildcardRelationReference("employee"),
+									},
+								},
+								"relation4": {
+									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
+										typesystem.DirectRelationReference("user", ""),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			target: typesystem.DirectRelationReference("document", "relation1"),
+			source: typesystem.DirectRelationReference("user", ""),
+			expected: []*RelationshipIngress{
+				{
+					Type:    DirectIngress,
+					Ingress: typesystem.DirectRelationReference("document", "relation1"),
+				},
+				{
+					Type:    DirectIngress,
+					Ingress: typesystem.DirectRelationReference("document", "relation4"),
+				},
+			},
+		},
+		{
+			name: "ingresses_involving_wildcards_2",
+			model: &openfgapb.AuthorizationModel{
+				TypeDefinitions: []*openfgapb.TypeDefinition{
+					{
+						Type: "user",
+					},
+					{
+						Type: "document",
+						Relations: map[string]*openfgapb.Userset{
+							"relation1": typesystem.Union(typesystem.This(), typesystem.ComputedUserset("relation2")),
+							"relation2": typesystem.This(),
+						},
+						Metadata: &openfgapb.Metadata{
+							Relations: map[string]*openfgapb.RelationMetadata{
+								"relation1": {
+									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
+										typesystem.DirectRelationReference("user", ""),
+									},
+								},
+								"relation2": {
+									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
+										typesystem.WildcardRelationReference("user"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			target: typesystem.DirectRelationReference("document", "relation1"),
+			source: typesystem.WildcardRelationReference("user"),
+			expected: []*RelationshipIngress{
+				{
+					Type:    DirectIngress,
+					Ingress: typesystem.DirectRelationReference("document", "relation2"),
+				},
+			},
+		},
+		{
+			name: "indirect_typed_wildcard",
+			model: &openfgapb.AuthorizationModel{
+				TypeDefinitions: []*openfgapb.TypeDefinition{
+					{
+						Type: "user",
+					},
+					{
+						Type: "group",
+						Relations: map[string]*openfgapb.Userset{
+							"member": typesystem.This(),
+						},
+						Metadata: &openfgapb.Metadata{
+							Relations: map[string]*openfgapb.RelationMetadata{
+								"member": {
+									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
+										typesystem.WildcardRelationReference("user"),
+									},
+								},
+							},
+						},
+					},
+					{
+						Type: "document",
+						Relations: map[string]*openfgapb.Userset{
+							"viewer": typesystem.This(),
+						},
+						Metadata: &openfgapb.Metadata{
+							Relations: map[string]*openfgapb.RelationMetadata{
+								"viewer": {
+									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
+										typesystem.DirectRelationReference("group", "member"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			target: typesystem.DirectRelationReference("document", "viewer"),
+			source: typesystem.DirectRelationReference("user", ""),
+			expected: []*RelationshipIngress{
+				{
+					Type:    DirectIngress,
+					Ingress: typesystem.DirectRelationReference("group", "member"),
 				},
 			},
 		},
@@ -674,4 +1027,16 @@ func TestConnectedObjectGraph_RelationshipIngresss(t *testing.T) {
 			require.ElementsMatch(t, test.expected, ingresses)
 		})
 	}
+}
+
+func TestResolutionDepthContext(t *testing.T) {
+	ctx := ContextWithResolutionDepth(context.Background(), 2)
+
+	depth, ok := ResolutionDepthFromContext(ctx)
+	require.True(t, ok)
+	require.Equal(t, uint32(2), depth)
+
+	depth, ok = ResolutionDepthFromContext(context.Background())
+	require.False(t, ok)
+	require.Equal(t, uint32(0), depth)
 }

@@ -3,16 +3,16 @@ package commands
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"testing"
 
 	"github.com/golang/mock/gomock"
 	"github.com/openfga/openfga/pkg/logger"
 	"github.com/openfga/openfga/pkg/telemetry"
 	"github.com/openfga/openfga/pkg/testutils"
-	"github.com/openfga/openfga/pkg/utils"
+	"github.com/openfga/openfga/pkg/tuple"
 	serverErrors "github.com/openfga/openfga/server/errors"
 	mockstorage "github.com/openfga/openfga/storage/mocks"
+	"github.com/stretchr/testify/require"
 	openfgapb "go.buf.build/openfga/go/openfga/api/openfga/v1"
 )
 
@@ -32,7 +32,7 @@ func TestValidateNoDuplicatesAndCorrectSize(t *testing.T) {
 
 	maxTuplesInWriteOp := 10
 	mockDatastore := mockstorage.NewMockOpenFGADatastore(mockController)
-	mockDatastore.EXPECT().MaxTuplesInWriteOperation().AnyTimes().Return(maxTuplesInWriteOp)
+	mockDatastore.EXPECT().MaxTuplesPerWrite().AnyTimes().Return(maxTuplesInWriteOp)
 
 	items := make([]*openfgapb.TupleKey, maxTuplesInWriteOp+1)
 	for i := 0; i < maxTuplesInWriteOp+1; i++ {
@@ -85,14 +85,12 @@ func TestValidateNoDuplicatesAndCorrectSize(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			err := cmd.validateNoDuplicatesAndCorrectSize(test.deletes, test.writes)
-			if !reflect.DeepEqual(err, test.expectedError) {
-				t.Errorf("Expected error %v, got %v", test.expectedError, err)
-			}
+			require.ErrorIs(t, err, test.expectedError)
 		})
 	}
 }
 
-func TestValidateWriteTuples(t *testing.T) {
+func TestValidateWriteRequest(t *testing.T) {
 	type test struct {
 		name          string
 		deletes       []*openfgapb.TupleKey
@@ -101,7 +99,7 @@ func TestValidateWriteTuples(t *testing.T) {
 	}
 
 	badItem := &openfgapb.TupleKey{
-		Object:   fmt.Sprintf("%s:1", testutils.CreateRandomString(459)),
+		Object:   fmt.Sprintf("%s:1", testutils.CreateRandomString(20)),
 		Relation: testutils.CreateRandomString(50),
 		User:     "",
 	}
@@ -114,16 +112,26 @@ func TestValidateWriteTuples(t *testing.T) {
 			expectedError: serverErrors.InvalidWriteInput,
 		},
 		{
-			name:          "write failure with invalid user",
-			deletes:       []*openfgapb.TupleKey{},
-			writes:        []*openfgapb.TupleKey{badItem},
-			expectedError: serverErrors.InvalidTuple("the 'user' field is invalid", badItem),
+			name:    "write failure with invalid user",
+			deletes: []*openfgapb.TupleKey{},
+			writes:  []*openfgapb.TupleKey{badItem},
+			expectedError: serverErrors.ValidationError(
+				&tuple.InvalidTupleError{
+					Cause:    fmt.Errorf("the 'user' field is malformed"),
+					TupleKey: badItem,
+				},
+			),
 		},
 		{
-			name:          "delete failure with invalid user",
-			deletes:       []*openfgapb.TupleKey{badItem},
-			writes:        []*openfgapb.TupleKey{},
-			expectedError: serverErrors.InvalidTuple("the 'user' field is invalid", badItem),
+			name:    "delete failure with invalid user",
+			deletes: []*openfgapb.TupleKey{badItem},
+			writes:  []*openfgapb.TupleKey{},
+			expectedError: serverErrors.ValidationError(
+				&tuple.InvalidTupleError{
+					Cause:    fmt.Errorf("the 'user' field is malformed"),
+					TupleKey: badItem,
+				},
+			),
 		},
 	}
 
@@ -131,13 +139,12 @@ func TestValidateWriteTuples(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			tracer := telemetry.NewNoopTracer()
 			logger := logger.NewNoopLogger()
-			dbCounter := utils.NewDBCallCounter()
 
 			mockController := gomock.NewController(t)
 			defer mockController.Finish()
 			maxTuplesInWriteOp := 10
 			mockDatastore := mockstorage.NewMockOpenFGADatastore(mockController)
-			mockDatastore.EXPECT().MaxTuplesInWriteOperation().AnyTimes().Return(maxTuplesInWriteOp)
+			mockDatastore.EXPECT().MaxTuplesPerWrite().AnyTimes().Return(maxTuplesInWriteOp)
 			cmd := NewWriteCommand(mockDatastore, tracer, logger)
 
 			if len(test.writes) > 0 {
@@ -151,10 +158,8 @@ func TestValidateWriteTuples(t *testing.T) {
 				Deletes: &openfgapb.TupleKeys{TupleKeys: test.deletes},
 			}
 
-			err := cmd.validateTuplesets(ctx, req, dbCounter)
-			if !reflect.DeepEqual(err, test.expectedError) {
-				t.Errorf("Expected error %v, got %v", test.expectedError, err)
-			}
+			err := cmd.validateWriteRequest(ctx, req)
+			require.ErrorIs(t, err, test.expectedError)
 		})
 	}
 }
