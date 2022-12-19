@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/openfga/openfga/internal/dispatcher"
 	"github.com/openfga/openfga/pkg/tuple"
 	"github.com/openfga/openfga/pkg/typesystem"
 	"github.com/openfga/openfga/storage"
@@ -29,13 +30,20 @@ type checkOutcome struct {
 // Check resolution is limited per branch of evaluation by the concurrencyLimit.
 type ConcurrentChecker struct {
 	ds               storage.OpenFGADatastore
-	concurrencyLimit int
+	dispatcher       dispatcher.CheckDispatcher
+	concurrencyLimit uint32
 }
 
 // NewConcurrentChecker constructs a ConcurrentChecker that can be used to evaluate a Check
 // request locally and with a high degree of concurrency.
-func NewConcurrentChecker(ds storage.OpenFGADatastore, concurrencyLimit int) *ConcurrentChecker {
-	return &ConcurrentChecker{ds, concurrencyLimit}
+func NewConcurrentChecker(
+	ds storage.OpenFGADatastore,
+	concurrencyLimit uint32,
+) *ConcurrentChecker {
+	checker := &ConcurrentChecker{ds: ds, concurrencyLimit: concurrencyLimit}
+	checker.dispatcher = checker // todo: replace with a different CheckDispatcher once we support dispatching
+
+	return checker
 }
 
 // CheckHandlerFunc defines a function that evaluates a CheckResponse or returns an error
@@ -45,13 +53,13 @@ type CheckHandlerFunc func(ctx context.Context) (*openfgapb.CheckResponse, error
 // CheckFuncReducer defines a function that combines or reduces one or more CheckHandlerFunc into
 // a single CheckResponse with a maximum limit on the number of concurrent evaluations that can be
 // in flight at any given time.
-type CheckFuncReducer func(ctx context.Context, concurrencyLimit int, handlers ...CheckHandlerFunc) (*openfgapb.CheckResponse, error)
+type CheckFuncReducer func(ctx context.Context, concurrencyLimit uint32, handlers ...CheckHandlerFunc) (*openfgapb.CheckResponse, error)
 
 // resolver concurrently resolves one or more CheckHandlerFunc and yields the results on the provided resultChan.
 // Callers of the 'resolver' function should be sure to invoke the callback returned from this function to ensure
 // every concurrent check is evaluated. The concurrencyLimit can be set to provide a maximum number of concurrent
 // evaluations in flight at any point.
-func resolver(ctx context.Context, concurrencyLimit int, resultChan chan<- checkOutcome, handlers ...CheckHandlerFunc) func() {
+func resolver(ctx context.Context, concurrencyLimit uint32, resultChan chan<- checkOutcome, handlers ...CheckHandlerFunc) func() {
 	limiter := make(chan struct{}, concurrencyLimit)
 
 	var wg sync.WaitGroup
@@ -88,7 +96,7 @@ func resolver(ctx context.Context, concurrencyLimit int, resultChan chan<- check
 
 // union implements a CheckFuncReducer that requires any of the provided CheckHandlerFunc to resolve
 // to an allowed outcome. The first allowed outcome causes premature termination of the reducer.
-func union(ctx context.Context, concurrencyLimit int, handlers ...CheckHandlerFunc) (*openfgapb.CheckResponse, error) {
+func union(ctx context.Context, concurrencyLimit uint32, handlers ...CheckHandlerFunc) (*openfgapb.CheckResponse, error) {
 
 	cctx, cancel := context.WithCancel(ctx)
 	resultChan := make(chan checkOutcome, len(handlers))
@@ -121,7 +129,7 @@ func union(ctx context.Context, concurrencyLimit int, handlers ...CheckHandlerFu
 
 // intersection implements a CheckFuncReducer that requires all of the provided CheckHandlerFunc to resolve
 // to an allowed outcome. The first falsey or erroneous outcome causes premature termination of the reducer.
-func intersection(ctx context.Context, concurrencyLimit int, handlers ...CheckHandlerFunc) (*openfgapb.CheckResponse, error) {
+func intersection(ctx context.Context, concurrencyLimit uint32, handlers ...CheckHandlerFunc) (*openfgapb.CheckResponse, error) {
 
 	cctx, cancel := context.WithCancel(ctx)
 	resultChan := make(chan checkOutcome, len(handlers))
@@ -156,7 +164,7 @@ func intersection(ctx context.Context, concurrencyLimit int, handlers ...CheckHa
 // exclusion implements a CheckFuncReducer that requires a 'base' CheckHandlerFunc to resolve to an allowed
 // outcome and a 'sub' CheckHandlerFunc to resolve to a falsey outcome. The base and sub computations are
 // handled concurrently relative to one another.
-func exclusion(ctx context.Context, concurrencyLimit int, handlers ...CheckHandlerFunc) (*openfgapb.CheckResponse, error) {
+func exclusion(ctx context.Context, concurrencyLimit uint32, handlers ...CheckHandlerFunc) (*openfgapb.CheckResponse, error) {
 
 	if len(handlers) != 2 {
 		panic(fmt.Sprintf("expected two rewrite operands for exclusion operator, but got '%d'", len(handlers)))
@@ -224,35 +232,61 @@ func exclusion(ctx context.Context, concurrencyLimit int, handlers ...CheckHandl
 	return &openfgapb.CheckResponse{Allowed: true}, nil
 }
 
-func (c *ConcurrentChecker) Check(parentctx context.Context, req *openfgapb.CheckRequest) CheckHandlerFunc {
+// dispatch dispatches the provided Check request to the CheckDispatcher this ConcurrentChecker
+// was constructed with.
+func (c *ConcurrentChecker) dispatch(ctx context.Context, req *dispatcher.DispatchCheckRequest) CheckHandlerFunc {
+	return func(ctx context.Context) (*openfgapb.CheckResponse, error) {
+		resp, err := c.dispatcher.DispatchCheck(ctx, req)
+		if err != nil {
+			return nil, err
+		}
 
-	typesys, ok := typesystem.TypesystemFromContext(parentctx)
+		return &openfgapb.CheckResponse{
+			Allowed: resp.Allowed,
+		}, nil
+	}
+}
+
+func (c *ConcurrentChecker) DispatchCheck(
+	ctx context.Context,
+	req *dispatcher.DispatchCheckRequest,
+) (*dispatcher.DispatchCheckResponse, error) {
+
+	if req.GetResolutionMetadata().Depth == 0 {
+		return nil, fmt.Errorf("resolution depth exceeded")
+	}
+
+	typesys, ok := typesystem.TypesystemFromContext(ctx)
 	if !ok {
 		panic("typesystem missing in context")
 	}
 
-	return func(ctx context.Context) (*openfgapb.CheckResponse, error) {
+	ctx = typesystem.ContextWithTypesystem(ctx, typesys)
 
-		ctx = typesystem.ContextWithTypesystem(ctx, typesys)
+	object := req.GetTupleKey().GetObject()
+	relation := req.GetTupleKey().GetRelation()
 
-		object := req.GetTupleKey().GetObject()
-		relation := req.GetTupleKey().GetRelation()
-
-		objectType, _ := tuple.SplitObject(object)
-		rel, err := typesys.GetRelation(objectType, relation)
-		if err != nil {
-			return nil, fmt.Errorf("relation '%s' undefined for object type '%s'", relation, objectType)
-		}
-
-		return union(ctx, c.concurrencyLimit, c.checkRewrite(ctx, req, rel.GetRewrite()))
+	objectType, _ := tuple.SplitObject(object)
+	rel, err := typesys.GetRelation(objectType, relation)
+	if err != nil {
+		return nil, fmt.Errorf("relation '%s' undefined for object type '%s'", relation, objectType)
 	}
+
+	resp, err := union(ctx, c.concurrencyLimit, c.checkRewrite(ctx, req, rel.GetRewrite()))
+	if err != nil {
+		return nil, err
+	}
+
+	return &dispatcher.DispatchCheckResponse{
+		Allowed: resp.Allowed,
+	}, nil
 }
 
 // checkDirect composes two CheckHandlerFunc which evaluate direct relationships with the provided
 // 'object#relation'. The first handler looks up direct matches on the provided 'object#relation@user',
 // while the second handler looks up relationships between the target 'object#relation' and any usersets
 // related to it.
-func (c *ConcurrentChecker) checkDirect(ctx context.Context, req *openfgapb.CheckRequest) CheckHandlerFunc {
+func (c *ConcurrentChecker) checkDirect(parentctx context.Context, req *dispatcher.DispatchCheckRequest) CheckHandlerFunc {
 	return func(ctx context.Context) (*openfgapb.CheckResponse, error) {
 
 		storeID := req.GetStoreId()
@@ -295,11 +329,16 @@ func (c *ConcurrentChecker) checkDirect(ctx context.Context, req *openfgapb.Chec
 				// otherwise, check the userset
 				usersetObject, usersetRelation := tuple.SplitObjectRelation(t.GetKey().GetUser())
 
-				handlers = append(handlers, c.Check(ctx, &openfgapb.CheckRequest{
-					StoreId:              storeID,
-					AuthorizationModelId: req.GetAuthorizationModelId(),
-					TupleKey:             tuple.NewTupleKey(usersetObject, usersetRelation, tk.GetUser()),
-				}))
+				handlers = append(handlers, c.dispatch(
+					ctx,
+					&dispatcher.DispatchCheckRequest{
+						StoreId:              storeID,
+						AuthorizationModelId: req.GetAuthorizationModelId(),
+						TupleKey:             tuple.NewTupleKey(usersetObject, usersetRelation, tk.GetUser()),
+						ResolutionMetadata: &dispatcher.ResolutionMetadata{
+							Depth: req.GetResolutionMetadata().Depth - 1,
+						},
+					}))
 			}
 
 			if len(handlers) > 0 {
@@ -315,7 +354,7 @@ func (c *ConcurrentChecker) checkDirect(ctx context.Context, req *openfgapb.Chec
 
 // checkTTU looks up all tuples of the target tupleset relation on the provided object and for each one
 // of them evaluates the computed userset of the TTU rewrite rule for them.
-func (c *ConcurrentChecker) checkTTU(parentctx context.Context, req *openfgapb.CheckRequest, rewrite *openfgapb.Userset) CheckHandlerFunc {
+func (c *ConcurrentChecker) checkTTU(parentctx context.Context, req *dispatcher.DispatchCheckRequest, rewrite *openfgapb.Userset) CheckHandlerFunc {
 
 	typesys, ok := typesystem.TypesystemFromContext(parentctx)
 	if !ok {
@@ -354,22 +393,22 @@ func (c *ConcurrentChecker) checkTTU(parentctx context.Context, req *openfgapb.C
 
 			userObj, _ := tuple.SplitObjectRelation(t.GetKey().GetUser())
 
-			// verify the computedRelation is actually a relation on the target userObjType and if not, skip it
-			// if _, err := typesys.GetRelation(tuple.GetType(userObj), userRel); err != nil {
-			// 	continue // todo(jon-whit): this code shouldn't be necessary here if the iterator is filtered
-			// }
-
 			tupleKey := &openfgapb.TupleKey{
 				Object:   userObj,
 				Relation: computedRelation,
 				User:     tk.GetUser(),
 			}
 
-			handlers = append(handlers, c.Check(ctx, &openfgapb.CheckRequest{
-				StoreId:              req.GetStoreId(),
-				AuthorizationModelId: req.GetAuthorizationModelId(),
-				TupleKey:             tupleKey,
-			}))
+			handlers = append(handlers, c.dispatch(
+				ctx,
+				&dispatcher.DispatchCheckRequest{
+					StoreId:              req.GetStoreId(),
+					AuthorizationModelId: req.GetAuthorizationModelId(),
+					TupleKey:             tupleKey,
+					ResolutionMetadata: &dispatcher.ResolutionMetadata{
+						Depth: req.GetResolutionMetadata().Depth - 1,
+					},
+				}))
 		}
 
 		if len(handlers) > 0 {
@@ -382,7 +421,7 @@ func (c *ConcurrentChecker) checkTTU(parentctx context.Context, req *openfgapb.C
 
 func (c *ConcurrentChecker) checkSetOperation(
 	ctx context.Context,
-	req *openfgapb.CheckRequest,
+	req *dispatcher.DispatchCheckRequest,
 	setOpType setOperationType,
 	reducer CheckFuncReducer,
 	children ...*openfgapb.Userset,
@@ -411,22 +450,31 @@ func (c *ConcurrentChecker) checkSetOperation(
 	}
 }
 
-func (c *ConcurrentChecker) checkRewrite(ctx context.Context, req *openfgapb.CheckRequest, rewrite *openfgapb.Userset) CheckHandlerFunc {
+func (c *ConcurrentChecker) checkRewrite(
+	ctx context.Context,
+	req *dispatcher.DispatchCheckRequest,
+	rewrite *openfgapb.Userset,
+) CheckHandlerFunc {
 
 	switch rw := rewrite.Userset.(type) {
 	case *openfgapb.Userset_This:
 		return c.checkDirect(ctx, req)
 	case *openfgapb.Userset_ComputedUserset:
 
-		return c.Check(ctx, &openfgapb.CheckRequest{
-			StoreId:              req.GetStoreId(),
-			AuthorizationModelId: req.GetAuthorizationModelId(),
-			TupleKey: tuple.NewTupleKey(
-				req.TupleKey.GetObject(),
-				rw.ComputedUserset.GetRelation(),
-				req.TupleKey.GetUser(),
-			),
-		})
+		return c.dispatch(
+			ctx,
+			&dispatcher.DispatchCheckRequest{
+				StoreId:              req.GetStoreId(),
+				AuthorizationModelId: req.GetAuthorizationModelId(),
+				TupleKey: tuple.NewTupleKey(
+					req.TupleKey.GetObject(),
+					rw.ComputedUserset.GetRelation(),
+					req.TupleKey.GetUser(),
+				),
+				ResolutionMetadata: &dispatcher.ResolutionMetadata{
+					Depth: req.ResolutionMetadata.Depth - 1,
+				},
+			})
 
 	case *openfgapb.Userset_TupleToUserset:
 		return c.checkTTU(ctx, req, rewrite)

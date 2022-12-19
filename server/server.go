@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
+	"github.com/openfga/openfga/internal/dispatcher"
 	"github.com/openfga/openfga/internal/gateway"
 	"github.com/openfga/openfga/internal/graph"
 	httpmiddleware "github.com/openfga/openfga/internal/middleware/http"
@@ -252,14 +253,24 @@ func (s *Server) CheckNew(ctx context.Context, req *openfgapb.CheckRequest) (*op
 	span.SetAttributes(attribute.KeyValue{Key: "authorization-model-id", Value: attribute.StringValue(model.GetId())})
 
 	ctx = typesystem.ContextWithTypesystem(ctx, typesystem.New(model))
+	ctx = graph.ContextWithResolutionDepth(ctx, s.config.ResolveNodeLimit)
 
 	checker := graph.NewConcurrentChecker(s.datastore, 100)
 
-	checkFunc := checker.Check(ctx, req)
-
-	res, err := checkFunc(ctx)
+	resp, err := checker.DispatchCheck(ctx, &dispatcher.DispatchCheckRequest{
+		StoreId:              req.GetStoreId(),
+		AuthorizationModelId: req.GetAuthorizationModelId(),
+		TupleKey:             req.GetTupleKey(),
+		ResolutionMetadata: &dispatcher.ResolutionMetadata{
+			Depth: s.config.ResolveNodeLimit,
+		},
+	})
 	if err != nil {
 		return nil, err
+	}
+
+	res := &openfgapb.CheckResponse{
+		Allowed: resp.Allowed,
 	}
 
 	span.SetAttributes(attribute.KeyValue{Key: "allowed", Value: attribute.BoolValue(res.GetAllowed())})
