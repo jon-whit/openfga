@@ -9,6 +9,7 @@ import (
 	"github.com/openfga/openfga/internal/utils"
 	"github.com/openfga/openfga/internal/validation"
 	tupleUtils "github.com/openfga/openfga/pkg/tuple"
+	"github.com/openfga/openfga/pkg/typesystem"
 	"github.com/openfga/openfga/storage"
 	openfgapb "go.buf.build/openfga/go/openfga/api/openfga/v1"
 )
@@ -271,6 +272,7 @@ func (sc *circuitBreaker) IsOpen() bool {
 type resolutionContext struct {
 	store            string
 	model            *openfgapb.AuthorizationModel
+	typesys          *typesystem.TypeSystem
 	users            *userSet
 	targetUser       string
 	tk               *openfgapb.TupleKey
@@ -285,6 +287,7 @@ func newResolutionContext(store string, model *openfgapb.AuthorizationModel, tk 
 	return &resolutionContext{
 		store:            store,
 		model:            model,
+		typesys:          typesystem.New(model),
 		users:            newUserSet(),
 		targetUser:       tk.GetUser(),
 		tk:               tk,
@@ -323,7 +326,6 @@ func (rc *resolutionContext) fork(tk *openfgapb.TupleKey, tracer resolutionTrace
 
 	return &resolutionContext{
 		store:            rc.store,
-		model:            rc.model,
 		users:            rc.users,
 		targetUser:       rc.targetUser,
 		tk:               tk,
@@ -360,7 +362,7 @@ func (rc *resolutionContext) readUsersetTuples(ctx context.Context, backend stor
 
 	return storage.NewFilteredTupleKeyIterator(
 		storage.NewCombinedIterator(iter1, iter2),
-		validation.FilterInvalidTuples(rc.model),
+		validation.FilterInvalidTuples(rc.typesys),
 	), nil
 }
 
@@ -376,6 +378,6 @@ func (rc *resolutionContext) read(ctx context.Context, backend storage.TupleBack
 
 	return storage.NewFilteredTupleKeyIterator(
 		storage.NewCombinedIterator(iter1, iter2),
-		validation.FilterInvalidTuples(rc.model),
+		validation.FilterInvalidTuples(rc.typesys),
 	), nil
 }

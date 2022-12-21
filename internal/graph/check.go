@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/openfga/openfga/internal/dispatcher"
+	"github.com/openfga/openfga/internal/validation"
 	"github.com/openfga/openfga/pkg/tuple"
 	"github.com/openfga/openfga/pkg/typesystem"
 	"github.com/openfga/openfga/storage"
@@ -287,6 +288,12 @@ func (c *ConcurrentChecker) DispatchCheck(
 // while the second handler looks up relationships between the target 'object#relation' and any usersets
 // related to it.
 func (c *ConcurrentChecker) checkDirect(parentctx context.Context, req *dispatcher.DispatchCheckRequest) CheckHandlerFunc {
+
+	typesys, ok := typesystem.TypesystemFromContext(parentctx)
+	if !ok {
+		panic("typesystem missing in context")
+	}
+
 	return func(ctx context.Context) (*openfgapb.CheckResponse, error) {
 
 		storeID := req.GetStoreId()
@@ -302,7 +309,10 @@ func (c *ConcurrentChecker) checkDirect(parentctx context.Context, req *dispatch
 				return &openfgapb.CheckResponse{Allowed: false}, err
 			}
 
-			if t != nil {
+			// filter out invalid tuples yielded by the database query
+			err = validation.ValidateTuple(typesys, tk)
+
+			if t != nil && err == nil {
 				return &openfgapb.CheckResponse{Allowed: true}, nil
 			}
 
@@ -315,9 +325,16 @@ func (c *ConcurrentChecker) checkDirect(parentctx context.Context, req *dispatch
 				return &openfgapb.CheckResponse{Allowed: false}, err
 			}
 
+			// filter out invalid tuples yielded by the database iterator
+			filteredIter := storage.NewFilteredTupleKeyIterator(
+				storage.NewTupleKeyIteratorFromTupleIterator(iter),
+				validation.FilterInvalidTuples(typesys),
+			)
+			defer filteredIter.Stop()
+
 			var handlers []CheckHandlerFunc
 			for {
-				t, err := iter.Next(ctx)
+				t, err := filteredIter.Next(ctx)
 				if err != nil {
 					if errors.Is(err, storage.ErrIteratorDone) {
 						break
@@ -326,8 +343,25 @@ func (c *ConcurrentChecker) checkDirect(parentctx context.Context, req *dispatch
 					return &openfgapb.CheckResponse{Allowed: false}, err
 				}
 
-				// otherwise, check the userset
-				usersetObject, usersetRelation := tuple.SplitObjectRelation(t.GetKey().GetUser())
+				usersetObject, usersetRelation := tuple.SplitObjectRelation(t.GetUser())
+
+				// for 1.0 models, if the user is '*' then we're done searching
+				if usersetObject == tuple.Wildcard && typesys.GetSchemaVersion() == typesystem.SchemaVersion1_0 {
+					return &openfgapb.CheckResponse{Allowed: true}, nil
+				}
+
+				// for 1.1 models, if the user value is a typed wildcard and the type of the wildcard
+				// matches the target user objectType, then we're done searching
+				if tuple.IsTypedWildcard(usersetObject) && typesys.GetSchemaVersion() == typesystem.SchemaVersion1_1 {
+
+					wildcardType := tuple.GetType(usersetObject)
+
+					if tuple.GetType(tk.GetUser()) == wildcardType {
+						return &openfgapb.CheckResponse{Allowed: true}, nil
+					}
+
+					return &openfgapb.CheckResponse{Allowed: false}, nil
+				}
 
 				handlers = append(handlers, c.dispatch(
 					ctx,
@@ -378,11 +412,17 @@ func (c *ConcurrentChecker) checkTTU(parentctx context.Context, req *dispatcher.
 		if err != nil {
 			return &openfgapb.CheckResponse{Allowed: false}, err
 		}
-		defer iter.Stop()
+
+		// filter out invalid tuples yielded by the database iterator
+		filteredIter := storage.NewFilteredTupleKeyIterator(
+			storage.NewTupleKeyIteratorFromTupleIterator(iter),
+			validation.FilterInvalidTuples(typesys),
+		)
+		defer filteredIter.Stop()
 
 		var handlers []CheckHandlerFunc
 		for {
-			t, err := iter.Next(ctx)
+			t, err := filteredIter.Next(ctx)
 			if err != nil {
 				if err == storage.ErrIteratorDone {
 					break
@@ -391,7 +431,7 @@ func (c *ConcurrentChecker) checkTTU(parentctx context.Context, req *dispatcher.
 				return &openfgapb.CheckResponse{Allowed: false}, err
 			}
 
-			userObj, _ := tuple.SplitObjectRelation(t.GetKey().GetUser())
+			userObj, _ := tuple.SplitObjectRelation(t.GetUser())
 
 			tupleKey := &openfgapb.TupleKey{
 				Object:   userObj,
