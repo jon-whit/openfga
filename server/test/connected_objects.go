@@ -46,6 +46,7 @@ func ConnectedObjectsTest(t *testing.T, ds storage.OpenFGADatastore) {
 			limit: 2,
 			model: `
 			type user
+
 			type folder
 			  relations
 			    define viewer: [user] as self
@@ -166,6 +167,7 @@ func ConnectedObjectsTest(t *testing.T, ds storage.OpenFGADatastore) {
 			},
 			model: `
 			type user
+
 			type group
 			  relations
 			    define member: [user, group#member] as self
