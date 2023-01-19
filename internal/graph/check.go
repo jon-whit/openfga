@@ -30,7 +30,7 @@ type checkOutcome struct {
 // ConcurrentChecker implements Check in a highly concurrent and localized manner. The
 // Check resolution is limited per branch of evaluation by the concurrencyLimit.
 type ConcurrentChecker struct {
-	ds               storage.OpenFGADatastore
+	ds               storage.RelationshipTupleReader
 	dispatcher       dispatcher.CheckDispatcher
 	concurrencyLimit uint32
 }

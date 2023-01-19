@@ -39,6 +39,7 @@ import (
 	"github.com/openfga/openfga/storage/memory"
 	"github.com/openfga/openfga/storage/mysql"
 	"github.com/openfga/openfga/storage/postgres"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/cors"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -482,6 +483,13 @@ func RunServer(ctx context.Context, config *Config) error {
 		zap.String("commit", build.Commit),
 		zap.String("go-version", goruntime.Version()),
 	)
+
+	go func() {
+		http.Handle("/metrics", promhttp.Handler())
+		if err := http.ListenAndServe(":2112", nil); err != nil {
+			logger.Fatal("failed to serve prometheus metrics on /metrics", zap.Error(err))
+		}
+	}()
 
 	// nosemgrep: grpc-server-insecure-connection
 	grpcServer := grpc.NewServer(opts...)

@@ -304,13 +304,8 @@ type Deletes = []*openfgapb.TupleKey
 
 // A TupleBackend provides an R/W interface for managing tuples.
 type TupleBackend interface {
-	// Read the set of tuples associated with `store` and `TupleKey`, which may be nil or partially filled. If nil,
-	// Read will return an iterator over all the `Tuple`s in the given store. If the `TupleKey` is partially filled,
-	// it will return an iterator over those `Tuple`s which match the `TupleKey`. Note that at least one of `Object`
-	// or `User` (or both), must be specified in this case.
-	//
-	// The caller must be careful to close the TupleIterator, either by consuming the entire iterator or by closing it.
-	Read(context.Context, string, *openfgapb.TupleKey) (TupleIterator, error)
+	RelationshipTupleReader
+	RelationshipTupleWriter
 
 	// ListObjectsByType returns all the objects of a specific type.
 	// You can assume that the type has already been validated.
@@ -320,6 +315,16 @@ type TupleBackend interface {
 		store string,
 		objectType string,
 	) (ObjectIterator, error)
+}
+
+type RelationshipTupleReader interface {
+	// Read the set of tuples associated with `store` and `TupleKey`, which may be nil or partially filled. If nil,
+	// Read will return an iterator over all the `Tuple`s in the given store. If the `TupleKey` is partially filled,
+	// it will return an iterator over those `Tuple`s which match the `TupleKey`. Note that at least one of `Object`
+	// or `User` (or both), must be specified in this case.
+	//
+	// The caller must be careful to close the TupleIterator, either by consuming the entire iterator or by closing it.
+	Read(context.Context, string, *openfgapb.TupleKey) (TupleIterator, error)
 
 	// ReadPage is similar to Read, but with PaginationOptions. Instead of returning a TupleIterator, ReadPage
 	// returns a page of tuples and a possibly non-empty continuation token.
@@ -329,13 +334,6 @@ type TupleBackend interface {
 		tk *openfgapb.TupleKey,
 		opts PaginationOptions,
 	) ([]*openfgapb.Tuple, []byte, error)
-
-	// Write updates data in the tuple backend, performing all delete operations in
-	// `deletes` before adding new values in `writes`, returning the time of the transaction, or an error.
-	// It is expected that
-	// - there is at most 10 deletes/writes
-	// - no duplicate item in delete/write list
-	Write(ctx context.Context, store string, d Deletes, w Writes) error
 
 	ReadUserTuple(
 		ctx context.Context,
@@ -364,6 +362,16 @@ type TupleBackend interface {
 		store string,
 		filter ReadStartingWithUserFilter,
 	) (TupleIterator, error)
+}
+
+type RelationshipTupleWriter interface {
+
+	// Write updates data in the tuple backend, performing all delete operations in
+	// `deletes` before adding new values in `writes`, returning the time of the transaction, or an error.
+	// It is expected that
+	// - there is at most 10 deletes/writes
+	// - no duplicate item in delete/write list
+	Write(ctx context.Context, store string, d Deletes, w Writes) error
 
 	// MaxTuplesPerWrite returns the maximum number of items allowed in a single write transaction
 	MaxTuplesPerWrite() int
