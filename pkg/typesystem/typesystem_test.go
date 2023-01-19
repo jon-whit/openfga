@@ -3,6 +3,7 @@ package typesystem
 import (
 	"testing"
 
+	parser "github.com/craigpastro/openfga-dsl-parser/v2"
 	"github.com/stretchr/testify/require"
 	openfgapb "go.buf.build/openfga/go/openfga/api/openfga/v1"
 )
@@ -13,7 +14,7 @@ func TestSuccessfulRewriteValidations(t *testing.T) {
 		model *openfgapb.AuthorizationModel
 	}{
 		{
-			name: "empty relations",
+			name: "empty_relations",
 			model: &openfgapb.AuthorizationModel{
 				SchemaVersion: SchemaVersion1_0,
 				TypeDefinitions: []*openfgapb.TypeDefinition{
@@ -24,7 +25,7 @@ func TestSuccessfulRewriteValidations(t *testing.T) {
 			},
 		},
 		{
-			name: "zero length relations is valid",
+			name: "zero_length_relations_is_valid",
 			model: &openfgapb.AuthorizationModel{
 				SchemaVersion: SchemaVersion1_0,
 				TypeDefinitions: []*openfgapb.TypeDefinition{
@@ -53,7 +54,7 @@ func TestInvalidRewriteValidations(t *testing.T) {
 		err   error
 	}{
 		{
-			name: "empty rewrites",
+			name: "empty_rewrites",
 			model: &openfgapb.AuthorizationModel{
 				SchemaVersion: SchemaVersion1_0,
 				TypeDefinitions: []*openfgapb.TypeDefinition{
@@ -68,7 +69,7 @@ func TestInvalidRewriteValidations(t *testing.T) {
 			err: ErrInvalidUsersetRewrite,
 		},
 		{
-			name: "invalid relation: self reference in computedUserset",
+			name: "invalid_relation:_self_reference_in_computedUserset",
 			model: &openfgapb.AuthorizationModel{
 				SchemaVersion: SchemaVersion1_0,
 				TypeDefinitions: []*openfgapb.TypeDefinition{
@@ -87,7 +88,7 @@ func TestInvalidRewriteValidations(t *testing.T) {
 			err: ErrInvalidUsersetRewrite,
 		},
 		{
-			name: "invalid relation: self reference in union",
+			name: "invalid_relation:_self_reference_in_union",
 			model: &openfgapb.AuthorizationModel{
 				SchemaVersion: SchemaVersion1_0,
 				TypeDefinitions: []*openfgapb.TypeDefinition{
@@ -117,7 +118,7 @@ func TestInvalidRewriteValidations(t *testing.T) {
 			err: ErrInvalidUsersetRewrite,
 		},
 		{
-			name: "invalid relation: self reference in intersection",
+			name: "invalid_relation:_self_reference_in_intersection",
 			model: &openfgapb.AuthorizationModel{
 				SchemaVersion: SchemaVersion1_0,
 				TypeDefinitions: []*openfgapb.TypeDefinition{
@@ -147,7 +148,7 @@ func TestInvalidRewriteValidations(t *testing.T) {
 			err: ErrInvalidUsersetRewrite,
 		},
 		{
-			name: "invalid relation: self reference in difference base",
+			name: "invalid_relation:_self_reference_in_difference_base",
 			model: &openfgapb.AuthorizationModel{
 				SchemaVersion: SchemaVersion1_0,
 				TypeDefinitions: []*openfgapb.TypeDefinition{
@@ -175,7 +176,7 @@ func TestInvalidRewriteValidations(t *testing.T) {
 			err: ErrInvalidUsersetRewrite,
 		},
 		{
-			name: "invalid relation: self reference in difference subtract",
+			name: "invalid_relation:_self_reference_in_difference_subtract",
 			model: &openfgapb.AuthorizationModel{
 				SchemaVersion: SchemaVersion1_0,
 				TypeDefinitions: []*openfgapb.TypeDefinition{
@@ -203,7 +204,7 @@ func TestInvalidRewriteValidations(t *testing.T) {
 			err: ErrInvalidUsersetRewrite,
 		},
 		{
-			name: "invalid relation: computedUserset to relation which does not exist",
+			name: "invalid_relation:_computedUserset_to_relation_which_does_not_exist",
 			model: &openfgapb.AuthorizationModel{
 				SchemaVersion: SchemaVersion1_0,
 				TypeDefinitions: []*openfgapb.TypeDefinition{
@@ -222,7 +223,7 @@ func TestInvalidRewriteValidations(t *testing.T) {
 			err: ErrRelationUndefined,
 		},
 		{
-			name: "invalid relation: computedUserset in a union",
+			name: "invalid_relation:_computedUserset_in_a_union",
 			model: &openfgapb.AuthorizationModel{
 				SchemaVersion: SchemaVersion1_0,
 				TypeDefinitions: []*openfgapb.TypeDefinition{
@@ -252,7 +253,7 @@ func TestInvalidRewriteValidations(t *testing.T) {
 			err: ErrRelationUndefined,
 		},
 		{
-			name: "invalid relation: computedUserset in a intersection",
+			name: "invalid_relation:_computedUserset_in_a_intersection",
 			model: &openfgapb.AuthorizationModel{
 				SchemaVersion: SchemaVersion1_0,
 				TypeDefinitions: []*openfgapb.TypeDefinition{
@@ -282,7 +283,7 @@ func TestInvalidRewriteValidations(t *testing.T) {
 			err: ErrRelationUndefined,
 		},
 		{
-			name: "invalid relation: computedUserset in a difference base",
+			name: "invalid_relation:_computedUserset_in_a_difference_base",
 			model: &openfgapb.AuthorizationModel{
 				SchemaVersion: SchemaVersion1_0,
 				TypeDefinitions: []*openfgapb.TypeDefinition{
@@ -310,7 +311,7 @@ func TestInvalidRewriteValidations(t *testing.T) {
 			err: ErrRelationUndefined,
 		},
 		{
-			name: "invalid relation: computedUserset in a difference subtract",
+			name: "invalid_relation:_computedUserset_in_a_difference_subtract",
 			model: &openfgapb.AuthorizationModel{
 				SchemaVersion: SchemaVersion1_0,
 				TypeDefinitions: []*openfgapb.TypeDefinition{
@@ -338,7 +339,7 @@ func TestInvalidRewriteValidations(t *testing.T) {
 			err: ErrRelationUndefined,
 		},
 		{
-			name: "invalid relation: tupleToUserset where tupleset is not valid",
+			name: "invalid_relation:_tupleToUserset_where_tupleset_is_not_valid",
 			model: &openfgapb.AuthorizationModel{
 				SchemaVersion: SchemaVersion1_0,
 				TypeDefinitions: []*openfgapb.TypeDefinition{
@@ -386,7 +387,7 @@ func TestInvalidRewriteValidations(t *testing.T) {
 			err: ErrRelationUndefined,
 		},
 		{
-			name: "invalid relation: tupleToUserset where computed userset is not valid",
+			name: "invalid_relation:_tupleToUserset_where_computed_userset_is_not_valid",
 			model: &openfgapb.AuthorizationModel{
 				SchemaVersion: SchemaVersion1_0,
 				TypeDefinitions: []*openfgapb.TypeDefinition{
@@ -448,7 +449,7 @@ func TestSuccessfulRelationTypeRestrictionsValidations(t *testing.T) {
 		model *openfgapb.AuthorizationModel
 	}{
 		{
-			name: "succeeds on a valid typeSystem with an objectType type",
+			name: "succeeds_on_a_valid_typeSystem_with_an_objectType_type",
 			model: &openfgapb.AuthorizationModel{
 				SchemaVersion: SchemaVersion1_1,
 				TypeDefinitions: []*openfgapb.TypeDefinition{
@@ -476,7 +477,7 @@ func TestSuccessfulRelationTypeRestrictionsValidations(t *testing.T) {
 			},
 		},
 		{
-			name: "succeeds on a valid typeSystem with a type and type#relation type",
+			name: "succeeds_on_a_valid_typeSystem_with_a_type_and_type#relation_type",
 			model: &openfgapb.AuthorizationModel{
 				SchemaVersion: SchemaVersion1_1,
 				TypeDefinitions: []*openfgapb.TypeDefinition{
@@ -551,7 +552,7 @@ func TestInvalidRelationTypeRestrictionsValidations(t *testing.T) {
 		err   error
 	}{
 		{
-			name: "relational type which does not exist",
+			name: "relational_type_which_does_not_exist",
 			model: &openfgapb.AuthorizationModel{
 				SchemaVersion: SchemaVersion1_1,
 				TypeDefinitions: []*openfgapb.TypeDefinition{
@@ -577,7 +578,7 @@ func TestInvalidRelationTypeRestrictionsValidations(t *testing.T) {
 			err: InvalidRelationTypeError("document", "reader", "group", ""),
 		},
 		{
-			name: "relation type of form type#relation where relation doesn't exist",
+			name: "relation_type_of_form_type#relation_where_relation_doesn't_exist",
 			model: &openfgapb.AuthorizationModel{
 				SchemaVersion: SchemaVersion1_1,
 				TypeDefinitions: []*openfgapb.TypeDefinition{
@@ -607,7 +608,7 @@ func TestInvalidRelationTypeRestrictionsValidations(t *testing.T) {
 			err: InvalidRelationTypeError("document", "reader", "group", "admin"),
 		},
 		{
-			name: "assignable relation with no type: this",
+			name: "assignable_relation_with_no_type:_this",
 			model: &openfgapb.AuthorizationModel{
 				SchemaVersion: SchemaVersion1_1,
 				TypeDefinitions: []*openfgapb.TypeDefinition{
@@ -624,7 +625,7 @@ func TestInvalidRelationTypeRestrictionsValidations(t *testing.T) {
 			err: AssignableRelationError("document", "reader"),
 		},
 		{
-			name: "assignable relation with no type: union",
+			name: "assignable_relation_with_no_type:_union",
 			model: &openfgapb.AuthorizationModel{
 				SchemaVersion: SchemaVersion1_1,
 				TypeDefinitions: []*openfgapb.TypeDefinition{
@@ -673,7 +674,7 @@ func TestInvalidRelationTypeRestrictionsValidations(t *testing.T) {
 			err: AssignableRelationError("document", "reader"),
 		},
 		{
-			name: "assignable relation with no type: intersection",
+			name: "assignable_relation_wit_no_type:_intersection",
 			model: &openfgapb.AuthorizationModel{
 				SchemaVersion: SchemaVersion1_1,
 				TypeDefinitions: []*openfgapb.TypeDefinition{
@@ -722,7 +723,7 @@ func TestInvalidRelationTypeRestrictionsValidations(t *testing.T) {
 			err: AssignableRelationError("document", "reader"),
 		},
 		{
-			name: "assignable relation with no type: difference base",
+			name: "assignable_relation_with_no_type:_difference base",
 			model: &openfgapb.AuthorizationModel{
 				SchemaVersion: SchemaVersion1_1,
 				TypeDefinitions: []*openfgapb.TypeDefinition{
@@ -769,7 +770,7 @@ func TestInvalidRelationTypeRestrictionsValidations(t *testing.T) {
 			err: AssignableRelationError("document", "reader"),
 		},
 		{
-			name: "assignable relation with no type: difference subtract",
+			name: "assignable_relation_with_no_type:_difference_subtract",
 			model: &openfgapb.AuthorizationModel{
 				SchemaVersion: SchemaVersion1_1,
 				TypeDefinitions: []*openfgapb.TypeDefinition{
@@ -816,7 +817,7 @@ func TestInvalidRelationTypeRestrictionsValidations(t *testing.T) {
 			err: AssignableRelationError("document", "reader"),
 		},
 		{
-			name: "non-assignable relation with a type",
+			name: "non-assignable_relation_with_a_type",
 			model: &openfgapb.AuthorizationModel{
 				SchemaVersion: SchemaVersion1_1,
 				TypeDefinitions: []*openfgapb.TypeDefinition{
@@ -859,7 +860,7 @@ func TestInvalidRelationTypeRestrictionsValidations(t *testing.T) {
 			err: NonAssignableRelationError("document", "reader"),
 		},
 		{
-			name: "userset specified as allowed type, but the relation is used in a TTU rewrite",
+			name: "userset_specified_as_allowed_type_but_the_relation_is_used_in_a_TTU_rewrite",
 			model: &openfgapb.AuthorizationModel{
 				SchemaVersion: SchemaVersion1_1,
 				TypeDefinitions: []*openfgapb.TypeDefinition{
@@ -902,7 +903,7 @@ func TestInvalidRelationTypeRestrictionsValidations(t *testing.T) {
 			err: InvalidRelationTypeError("document", "parent", "folder", "member"),
 		},
 		{
-			name: "userset specified as allowed type, but the relation is used in a TTU rewrite included in a union",
+			name: "userset_specified_as_allowed_type_but_the_relation_is_used_in_a_TTU_rewrite_included_in_a_union",
 			model: &openfgapb.AuthorizationModel{
 				SchemaVersion: SchemaVersion1_1,
 				TypeDefinitions: []*openfgapb.TypeDefinition{
@@ -1021,159 +1022,194 @@ func TestInvalidRelationTypeRestrictionsValidations(t *testing.T) {
 func TestRelationInvolvesIntersection(t *testing.T) {
 	tests := []struct {
 		name        string
-		model       *openfgapb.AuthorizationModel
+		model       string
 		rr          *openfgapb.RelationReference
 		expected    bool
 		expectedErr error
 	}{
 		{
-			name: "Indirect ComputedUserset through TTU Containing Intersection",
-			model: &openfgapb.AuthorizationModel{
-				TypeDefinitions: []*openfgapb.TypeDefinition{
-					{
-						Type: "user",
-					},
-					{
-						Type: "document",
-						Relations: map[string]*openfgapb.Userset{
-							"parent": This(),
-							"editor": TupleToUserset("parent", "editor"),
-							"viewer": ComputedUserset("editor"),
-						},
-						Metadata: &openfgapb.Metadata{
-							Relations: map[string]*openfgapb.RelationMetadata{
-								"parent": {
-									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										DirectRelationReference("folder", ""),
-									},
-								},
-							},
-						},
-					},
-					{
-						Type: "folder",
-						Relations: map[string]*openfgapb.Userset{
-							"manage": This(),
-							"editor": Intersection(This(), ComputedUserset("manage")),
-						},
-						Metadata: &openfgapb.Metadata{
-							Relations: map[string]*openfgapb.RelationMetadata{
-								"manage": {
-									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										DirectRelationReference("user", ""),
-									},
-								},
-								"editor": {
-									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										DirectRelationReference("user", ""),
-									},
-								},
-							},
-						},
-					},
-				},
-			},
+			name: "indirect_computeduserset_through_ttu_containing_intersection",
+			model: `
+			type user
+
+			type folder
+			  relations
+			    define manage: [user] as self
+			    define editor: [user] as self and manage
+
+			type document
+			  relations
+			    define parent: [folder] as self
+			    define editor as editor from parent
+			    define viewer as editor
+			`,
 			rr:       DirectRelationReference("document", "viewer"),
 			expected: true,
 		},
 		{
-			name: "TupleToUserset Relations Containing Intersection",
-			model: &openfgapb.AuthorizationModel{
-				TypeDefinitions: []*openfgapb.TypeDefinition{
-					{
-						Type: "user",
-					},
-					{
-						Type: "document",
-						Relations: map[string]*openfgapb.Userset{
-							"parent": This(),
-							"viewer": TupleToUserset("parent", "viewer"),
-						},
-						Metadata: &openfgapb.Metadata{
-							Relations: map[string]*openfgapb.RelationMetadata{
-								"parent": {
-									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										DirectRelationReference("folder", ""),
-									},
-								},
-							},
-						},
-					},
-					{
-						Type: "folder",
-						Relations: map[string]*openfgapb.Userset{
-							"editor": This(),
-							"viewer": Intersection(This(), ComputedUserset("editor")),
-						},
-						Metadata: &openfgapb.Metadata{
-							Relations: map[string]*openfgapb.RelationMetadata{
-								"editor": {
-									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										DirectRelationReference("user", ""),
-									},
-								},
-								"viewer": {
-									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										DirectRelationReference("user", ""),
-									},
-								},
-							},
-						},
-					},
-				},
-			},
+			name: "ttu_relations_containing_intersection",
+			model: `
+			type user
+
+			type folder
+			  relations
+			    define editor: [user] as self
+			    define viewer: [user] as self and editor
+
+			type document
+			  relations
+			    define parent: [folder] as self
+			    define viewer as viewer from parent
+			`,
 			rr:       DirectRelationReference("document", "viewer"),
 			expected: true,
 		},
 		{
-			name: "Indirect Relations Containing Intersection",
-			model: &openfgapb.AuthorizationModel{
-				TypeDefinitions: []*openfgapb.TypeDefinition{
-					{
-						Type: "document",
-						Relations: map[string]*openfgapb.Userset{
-							"editor": Intersection(
-								This(),
-							),
-							"viewer": ComputedUserset("editor"),
-						},
-					},
-				},
-			},
+			name: "indirect_relations_containing_intersection",
+			model: `
+			type user
+
+			type document
+			  relations
+			    define editor: [user] as self
+			    define viewer: [user] as self and editor
+			`,
 			rr:       DirectRelationReference("document", "viewer"),
 			expected: true,
 		},
 		{
-			name: "Undefined type",
-			model: &openfgapb.AuthorizationModel{
-				TypeDefinitions: []*openfgapb.TypeDefinition{
-					{
-						Type: "user",
-					},
-				},
-			},
+			name: "undefined_type",
+			model: `
+			type user
+			`,
 			rr:          DirectRelationReference("document", "viewer"),
 			expected:    false,
 			expectedErr: ErrObjectTypeUndefined,
 		},
 		{
-			name: "Undefined relation",
-			model: &openfgapb.AuthorizationModel{
-				TypeDefinitions: []*openfgapb.TypeDefinition{
-					{
-						Type: "user",
-					},
-				},
-			},
+			name: "undefined_relation",
+			model: `
+			type user
+			`,
 			rr:          DirectRelationReference("user", "viewer"),
 			expected:    false,
 			expectedErr: ErrRelationUndefined,
+		},
+		{
+			name: "non-assignable_indirect_type_restriction_involving_intersection",
+			model: `
+			type user
+
+			type org
+			  relations
+			    define allowed: [user] as self
+			    define dept: [group] as self
+			    define dept_member as member from dept
+			    define dept_allowed_member as dept_member and allowed
+
+			type resource
+			  relations
+			    define reader: [user] as self or writer
+			    define writer: [org#dept_allowed_member] as self
+			`,
+			rr:       DirectRelationReference("resource", "reader"),
+			expected: true,
+		},
+		{
+			name: "indirect_relationship_through_type_restriction",
+			model: `
+			type user
+
+			type document
+			  relations
+			    define allowed: [user] as self
+			    define editor: [user] as self and allowed
+			    define viewer: [document#editor] as self
+			`,
+			rr:       DirectRelationReference("document", "viewer"),
+			expected: true,
+		},
+		{
+			name: "github_model",
+			model: `
+			type user
+
+			type organization
+			  relations
+			    define member: [user] as self or owner
+				define owner: [user] as self
+				define repo_admin: [user, organization#member] as self
+				define repo_reader: [user, organization#member] as self
+				define repo_writer: [user, organization#member] as self
+
+			type team
+			  relations
+			    define member: [user, team#member] as self
+
+			type repo
+			  relations
+			    define admin: [user, team#member] as self or repo_admin from owner
+				define maintainer: [user, team#member] as self or admin
+				define owner: [organization] as self
+				define reader: [user, team#member] as self or triager or repo_reader from owner
+				define triager: [user, team#member] as self or writer
+				define writer: [user, team#member] as self or maintainer or repo_writer from owner
+			`,
+			rr:       DirectRelationReference("repo", "admin"),
+			expected: false,
+		},
+		{
+			name: "github_model",
+			model: `
+			type user
+
+			type organization
+			  relations
+			    define member: [user] as self or owner
+				define owner: [user] as self
+				define repo_admin: [user, organization#member] as self
+				define repo_reader: [user, organization#member] as self
+				define repo_writer: [user, organization#member] as self
+
+			type team
+			  relations
+			    define member: [user, team#member] as self
+
+			type repo
+			  relations
+			    define admin: [user, team#member] as self or repo_admin from owner
+				define maintainer: [user, team#member] as self or admin
+				define owner: [organization] as self
+				define reader: [user, team#member] as self or triager or repo_reader from owner
+				define triager: [user, team#member] as self or writer
+				define writer: [user, team#member] as self or maintainer or repo_writer from owner
+			`,
+			rr:       DirectRelationReference("repo", "admin"),
+			expected: false,
+		},
+		{
+			name: "direct_relations_related_to_each_other",
+			model: `
+			type user
+
+			type example
+			  relations
+			    define editor: [example#viewer] as self
+			    define viewer: [example#editor] as self
+			`,
+			rr:       DirectRelationReference("example", "editor"),
+			expected: false,
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			typesys := New(test.model)
+
+			typedefs := parser.MustParse(test.model)
+
+			typesys := New(&openfgapb.AuthorizationModel{
+				TypeDefinitions: typedefs,
+			})
 
 			objectType := test.rr.GetType()
 			relationStr := test.rr.GetRelation()
@@ -1189,161 +1225,137 @@ func TestRelationInvolvesExclusion(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		model       *openfgapb.AuthorizationModel
+		model       string
 		rr          *openfgapb.RelationReference
 		expected    bool
 		expectedErr error
 	}{
 		{
-			name: "Indirect ComputedUserset through TTU Containing Exclusion",
-			model: &openfgapb.AuthorizationModel{
-				TypeDefinitions: []*openfgapb.TypeDefinition{
-					{
-						Type: "user",
-					},
-					{
-						Type: "document",
-						Relations: map[string]*openfgapb.Userset{
-							"parent": This(),
-							"editor": TupleToUserset("parent", "editor"),
-							"viewer": ComputedUserset("editor"),
-						},
-						Metadata: &openfgapb.Metadata{
-							Relations: map[string]*openfgapb.RelationMetadata{
-								"parent": {
-									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										DirectRelationReference("folder", ""),
-									},
-								},
-							},
-						},
-					},
-					{
-						Type: "folder",
-						Relations: map[string]*openfgapb.Userset{
-							"restricted": This(),
-							"editor":     Difference(This(), ComputedUserset("restricted")),
-						},
-						Metadata: &openfgapb.Metadata{
-							Relations: map[string]*openfgapb.RelationMetadata{
-								"restricted": {
-									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										DirectRelationReference("user", ""),
-									},
-								},
-								"editor": {
-									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										DirectRelationReference("user", ""),
-									},
-								},
-							},
-						},
-					},
-				},
-			},
+			name: "indirect_computed_userset_through_ttu_containing_exclusion",
+			model: `
+			type user
+
+			type folder
+			  relations
+			    define restricted: [user] as self
+			    define editor: [user] as self but not restricted
+
+			type document
+			  relations
+			    define parent: [folder] as self
+			    define editor as editor from parent
+			    define viewer as editor
+			`,
 			rr:       DirectRelationReference("document", "viewer"),
 			expected: true,
 		},
 		{
-			name: "TupleToUserset Relations Containing Exclusion",
-			model: &openfgapb.AuthorizationModel{
-				TypeDefinitions: []*openfgapb.TypeDefinition{
-					{
-						Type: "user",
-					},
-					{
-						Type: "document",
-						Relations: map[string]*openfgapb.Userset{
-							"parent": This(),
-							"viewer": TupleToUserset("parent", "viewer"),
-						},
-						Metadata: &openfgapb.Metadata{
-							Relations: map[string]*openfgapb.RelationMetadata{
-								"parent": {
-									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										DirectRelationReference("folder", ""),
-									},
-								},
-							},
-						},
-					},
-					{
-						Type: "folder",
-						Relations: map[string]*openfgapb.Userset{
-							"restricted": This(),
-							"viewer":     Difference(This(), ComputedUserset("restricted")),
-						},
-						Metadata: &openfgapb.Metadata{
-							Relations: map[string]*openfgapb.RelationMetadata{
-								"restricted": {
-									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										DirectRelationReference("user", ""),
-									},
-								},
-								"viewer": {
-									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										DirectRelationReference("user", ""),
-									},
-								},
-							},
-						},
-					},
-				},
-			},
+			name: "ttu_relations_containing_exclusion",
+			model: `
+			type user
+
+			type folder
+			  relations
+			    define restricted: [user] as self
+			    define viewer: [user] as self but not restricted
+
+			type document
+			  relations
+			    define parent: [folder] as self
+			    define viewer as viewer from parent
+			`,
 			rr:       DirectRelationReference("document", "viewer"),
 			expected: true,
 		},
 		{
-			name: "Indirect Relations Containing Exclusion",
-			model: &openfgapb.AuthorizationModel{
-				TypeDefinitions: []*openfgapb.TypeDefinition{
-					{
-						Type: "document",
-						Relations: map[string]*openfgapb.Userset{
-							"restricted": This(),
-							"editor": Difference(
-								This(),
-								ComputedUserset("restricted"),
-							),
-							"viewer": ComputedUserset("editor"),
-						},
-					},
-				},
-			},
+			name: "indirect_relations_containing_exclusion",
+			model: `
+			type user
+
+			type document
+			  relations
+			    define restricted: [user] as self
+			    define editor: [user] as self but not restricted
+			    define viewer as editor
+			`,
 			rr:       DirectRelationReference("document", "viewer"),
 			expected: true,
 		},
 		{
-			name: "Undefined type",
-			model: &openfgapb.AuthorizationModel{
-				TypeDefinitions: []*openfgapb.TypeDefinition{
-					{
-						Type: "user",
-					},
-				},
-			},
+			name: "undefined_type",
+			model: `
+			type user
+			`,
 			rr:          DirectRelationReference("document", "viewer"),
 			expected:    false,
 			expectedErr: ErrObjectTypeUndefined,
 		},
 		{
-			name: "Undefined relation",
-			model: &openfgapb.AuthorizationModel{
-				TypeDefinitions: []*openfgapb.TypeDefinition{
-					{
-						Type: "user",
-					},
-				},
-			},
+			name: "undefined_relation",
+			model: `
+			type user
+			`,
 			rr:          DirectRelationReference("user", "viewer"),
 			expected:    false,
 			expectedErr: ErrRelationUndefined,
+		},
+		{
+			name: "non-assignable_indirect_type_restriction_involving_exclusion",
+			model: `
+			type user
+
+			type org
+			  relations
+			    define removed: [user] as self
+			    define dept: [group] as self
+			    define dept_member as member from dept
+			    define dept_allowed_member as dept_member but not removed
+
+			type resource
+			  relations
+			    define reader: [user] as self or writer
+			    define writer: [org#dept_allowed_member] as self
+			`,
+			rr:       DirectRelationReference("resource", "reader"),
+			expected: true,
+		},
+		{
+			name: "indirect_relationship_through_type_restriction",
+			model: `
+			type user
+
+			type document
+			  relations
+			    define restricted: [user] as self
+			    define editor: [user] as self but not restricted
+			    define viewer: [document#editor] as self
+			`,
+			rr:       DirectRelationReference("document", "viewer"),
+			expected: true,
+		},
+		{
+			name: "direct_relations_related_to_each_other",
+			model: `
+			type user
+
+			type example
+			  relations
+			    define editor: [example#viewer] as self
+			    define viewer: [example#editor] as self
+			`,
+			rr:       DirectRelationReference("example", "editor"),
+			expected: false,
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			typesys := New(test.model)
+
+			typedefs := parser.MustParse(test.model)
+
+			typesys := New(&openfgapb.AuthorizationModel{
+				TypeDefinitions: typedefs,
+			})
 
 			objectType := test.rr.GetType()
 			relationStr := test.rr.GetRelation()
@@ -1556,104 +1568,272 @@ func TestIsTuplesetRelation(t *testing.T) {
 func TestIsDirectlyRelated(t *testing.T) {
 	tests := []struct {
 		name   string
-		model  *openfgapb.AuthorizationModel
+		model  string
 		target *openfgapb.RelationReference
 		source *openfgapb.RelationReference
 		result bool
 	}{
 		{
 			name: "wildcard_and_wildcard",
-			model: &openfgapb.AuthorizationModel{
-				TypeDefinitions: []*openfgapb.TypeDefinition{
-					{
-						Type: "user",
-					},
-					{
-						Type: "document",
-						Relations: map[string]*openfgapb.Userset{
-							"viewer": This(),
-						},
-						Metadata: &openfgapb.Metadata{
-							Relations: map[string]*openfgapb.RelationMetadata{
-								"viewer": {
-									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										WildcardRelationReference("user"),
-									},
-								},
-							},
-						},
-					},
-				},
-			},
+			model: `
+			type user
+
+			type document
+			  relations
+			    define viewer: [user:*] as self
+			`,
 			target: DirectRelationReference("document", "viewer"),
 			source: WildcardRelationReference("user"),
 			result: true,
 		},
 		{
 			name: "wildcard_and_direct",
-			model: &openfgapb.AuthorizationModel{
-				TypeDefinitions: []*openfgapb.TypeDefinition{
-					{
-						Type: "user",
-					},
-					{
-						Type: "document",
-						Relations: map[string]*openfgapb.Userset{
-							"viewer": This(),
-						},
-						Metadata: &openfgapb.Metadata{
-							Relations: map[string]*openfgapb.RelationMetadata{
-								"viewer": {
-									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										WildcardRelationReference("user"),
-									},
-								},
-							},
-						},
-					},
-				},
-			},
+			model: `
+			type user
+
+			type document
+			  relations
+			    define viewer: [user:*] as self
+			`,
+			target: DirectRelationReference("document", "viewer"),
+			source: DirectRelationReference("user", ""),
+			result: false,
+		},
+		{
+			name: "direct_and_wildcard",
+			model: `
+			type user
+			
+			type document
+			  relations
+			    define viewer: [user] as self
+			`,
+			target: DirectRelationReference("document", "viewer"),
+			source: WildcardRelationReference("user"),
+			result: false,
+		},
+		{
+			name: "direct_type",
+			model: `
+			type user
+			
+			type document
+			  relations
+			    define viewer: [user] as self
+			`,
 			target: DirectRelationReference("document", "viewer"),
 			source: DirectRelationReference("user", ""),
 			result: true,
 		},
 		{
-			name: "direct_and_wildcard",
-			model: &openfgapb.AuthorizationModel{
-				TypeDefinitions: []*openfgapb.TypeDefinition{
-					{
-						Type: "user",
-					},
-					{
-						Type: "document",
-						Relations: map[string]*openfgapb.Userset{
-							"viewer": This(),
-						},
-						Metadata: &openfgapb.Metadata{
-							Relations: map[string]*openfgapb.RelationMetadata{
-								"viewer": {
-									DirectlyRelatedUserTypes: []*openfgapb.RelationReference{
-										DirectRelationReference("user", ""),
-									},
-								},
-							},
-						},
-					},
-				},
-			},
+			name: "relation_not_related",
+			model: `
+			type user
+			  relations
+			    define manager: [user] as self
+			
+			type document
+			  relations
+			    define viewer: [user] as self
+			`,
 			target: DirectRelationReference("document", "viewer"),
-			source: WildcardRelationReference("user"),
+			source: DirectRelationReference("user", "manager"),
 			result: false,
+		},
+		{
+			name: "direct_and_userset",
+			model: `
+			type group
+			  relations
+			    define member: [group#member] as self
+			
+			type document
+			  relations
+			    define viewer: [group#member] as self
+			`,
+			target: DirectRelationReference("document", "viewer"),
+			source: DirectRelationReference("group", "member"),
+			result: true,
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			typesys := New(test.model)
+
+			typedefs := parser.MustParse(test.model)
+			typesys := New(&openfgapb.AuthorizationModel{
+				SchemaVersion:   SchemaVersion1_1,
+				TypeDefinitions: typedefs,
+			})
 
 			ok, err := typesys.IsDirectlyRelated(test.target, test.source)
 			require.NoError(t, err)
+			require.Equal(t, test.result, ok)
+		})
+	}
+}
+
+func TestIsPubliclyAssignable(t *testing.T) {
+	tests := []struct {
+		name       string
+		model      string
+		target     *openfgapb.RelationReference
+		objectType string
+		result     bool
+	}{
+		{
+			name: "1",
+			model: `
+			type user
+
+			type document
+			  relations
+			    define viewer: [user:*] as self
+			`,
+			target:     DirectRelationReference("document", "viewer"),
+			objectType: "user",
+			result:     true,
+		},
+		{
+			name: "2",
+			model: `
+			type user
+
+			type document
+			  relations
+			    define viewer: [user] as self
+			`,
+			target:     DirectRelationReference("document", "viewer"),
+			objectType: "user",
+			result:     false,
+		},
+		{
+			name: "3",
+			model: `
+			type user
+			type employee
+
+			type document
+			  relations
+			    define viewer: [employee:*] as self
+			`,
+			target:     DirectRelationReference("document", "viewer"),
+			objectType: "user",
+			result:     false,
+		},
+		{
+			name: "4",
+			model: `
+			type user
+
+			type group
+			  relations
+			    define member: [user:*] as self
+
+			type document
+			  relations
+			    define viewer: [group#member] as self
+			`,
+			target:     DirectRelationReference("document", "viewer"),
+			objectType: "user",
+			result:     false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+
+			typedefs := parser.MustParse(test.model)
+			typesys := New(&openfgapb.AuthorizationModel{
+				SchemaVersion:   SchemaVersion1_1,
+				TypeDefinitions: typedefs,
+			})
+
+			ok, err := typesys.IsPubliclyAssignable(test.target, test.objectType)
+			require.NoError(t, err)
 			require.Equal(t, ok, test.result)
+		})
+	}
+}
+
+func TestRewriteContainsExclusion(t *testing.T) {
+	tests := []struct {
+		name     string
+		model    string
+		rr       *openfgapb.RelationReference
+		expected bool
+	}{
+		{
+			name: "simple_exclusion",
+			model: `
+			type user
+
+			type folder
+			  relations
+			    define restricted: [user] as self
+			    define editor: [user] as self
+			    define viewer: [user] as (self or editor) but not restricted
+			`,
+			rr:       DirectRelationReference("folder", "viewer"),
+			expected: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+
+			typedefs := parser.MustParse(test.model)
+
+			typesys := New(&openfgapb.AuthorizationModel{
+				TypeDefinitions: typedefs,
+			})
+
+			rel, err := typesys.GetRelation(test.rr.GetType(), test.rr.GetRelation())
+			require.NoError(t, err)
+
+			actual := RewriteContainsExclusion(rel.GetRewrite())
+			require.Equal(t, test.expected, actual)
+		})
+	}
+}
+
+func TestRewriteContainsIntersection(t *testing.T) {
+	tests := []struct {
+		name     string
+		model    string
+		rr       *openfgapb.RelationReference
+		expected bool
+	}{
+		{
+			name: "simple_intersection",
+			model: `
+			type user
+
+			type folder
+			  relations
+			    define allowed: [user] as self
+			    define editor: [user] as self
+			    define viewer: [user] as (self or editor) and allowed
+			`,
+			rr:       DirectRelationReference("folder", "viewer"),
+			expected: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+
+			typedefs := parser.MustParse(test.model)
+
+			typesys := New(&openfgapb.AuthorizationModel{
+				TypeDefinitions: typedefs,
+			})
+
+			rel, err := typesys.GetRelation(test.rr.GetType(), test.rr.GetRelation())
+			require.NoError(t, err)
+
+			actual := RewriteContainsIntersection(rel.GetRewrite())
+			require.Equal(t, test.expected, actual)
 		})
 	}
 }

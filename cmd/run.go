@@ -36,6 +36,7 @@ import (
 	"github.com/openfga/openfga/server/health"
 	"github.com/openfga/openfga/storage"
 	"github.com/openfga/openfga/storage/caching"
+	"github.com/openfga/openfga/storage/common"
 	"github.com/openfga/openfga/storage/memory"
 	"github.com/openfga/openfga/storage/mysql"
 	"github.com/openfga/openfga/storage/postgres"
@@ -45,7 +46,9 @@ import (
 	"github.com/spf13/viper"
 	openfgapb "go.buf.build/openfga/go/openfga/api/openfga/v1"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
+	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -146,6 +149,9 @@ type AuthnPresharedKeyConfig struct {
 type LogConfig struct {
 	// Format is the log format to use in the log output (e.g. 'text' or 'json')
 	Format string
+
+	// Level is the log level to use in the log output (e.g. 'none', 'debug', or 'info')
+	Level string
 }
 
 // PlaygroundConfig defines OpenFGA server configurations for the Playground specific settings.
@@ -158,6 +164,16 @@ type PlaygroundConfig struct {
 type ProfilerConfig struct {
 	Enabled bool
 	Addr    string
+}
+
+type OpenTelemetryMetricsConfig struct {
+	Endpoint string
+	Protocol string
+}
+
+// OpenTelemetryConfig defines configurations for OpenTelemetry telemetry settings.
+type OpenTelemetryConfig struct {
+	OpenTelemetryMetricsConfig `mapstructure:"metrics"`
 }
 
 type Config struct {
@@ -182,16 +198,20 @@ type Config struct {
 	// ChangelogHorizonOffset is an offset in minutes from the current time. Changes that occur after this offset will not be included in the response of ReadChanges.
 	ChangelogHorizonOffset int
 
+	// Experimentals is a list of the experimental features to enable in the OpenFGA server.
+	Experimentals []string
+
 	// ResolveNodeLimit indicates how deeply nested an authorization model can be.
 	ResolveNodeLimit uint32
 
-	Datastore  DatastoreConfig
-	GRPC       GRPCConfig
-	HTTP       HTTPConfig
-	Authn      AuthnConfig
-	Log        LogConfig
-	Playground PlaygroundConfig
-	Profiler   ProfilerConfig
+	Datastore     DatastoreConfig
+	GRPC          GRPCConfig
+	HTTP          HTTPConfig
+	Authn         AuthnConfig
+	Log           LogConfig
+	Playground    PlaygroundConfig
+	Profiler      ProfilerConfig
+	OpenTelemetry OpenTelemetryConfig `mapstructure:"otel"`
 }
 
 // DefaultConfig returns the OpenFGA server default configurations.
@@ -201,6 +221,7 @@ func DefaultConfig() *Config {
 		MaxTypesPerAuthorizationModel: 100,
 		ChangelogHorizonOffset:        0,
 		ResolveNodeLimit:              25,
+		Experimentals:                 []string{},
 		ListObjectsDeadline:           3 * time.Second, // there is a 3-second timeout elsewhere
 		ListObjectsMaxResults:         1000,
 		Datastore: DatastoreConfig{
@@ -226,6 +247,7 @@ func DefaultConfig() *Config {
 		},
 		Log: LogConfig{
 			Format: "text",
+			Level:  "info",
 		},
 		Playground: PlaygroundConfig{
 			Enabled: true,
@@ -234,6 +256,12 @@ func DefaultConfig() *Config {
 		Profiler: ProfilerConfig{
 			Enabled: false,
 			Addr:    ":3001",
+		},
+		OpenTelemetry: OpenTelemetryConfig{
+			OpenTelemetryMetricsConfig: OpenTelemetryMetricsConfig{
+				Protocol: "grpc",
+				Endpoint: "0.0.0.0:4317",
+			},
 		},
 	}
 }
@@ -302,6 +330,20 @@ func VerifyConfig(cfg *Config) error {
 		return fmt.Errorf("config 'http.upstreamTimeout' (%s) cannot be lower than 'listObjectsDeadline' config (%s)", cfg.HTTP.UpstreamTimeout, cfg.ListObjectsDeadline)
 	}
 
+	if cfg.Log.Format != "text" && cfg.Log.Format != "json" {
+		return fmt.Errorf("config 'log.format' must be one of ['text', 'json']")
+	}
+
+	if cfg.Log.Level != "none" &&
+		cfg.Log.Level != "debug" &&
+		cfg.Log.Level != "info" &&
+		cfg.Log.Level != "warn" &&
+		cfg.Log.Level != "error" &&
+		cfg.Log.Level != "panic" &&
+		cfg.Log.Level != "fatal" {
+		return fmt.Errorf("config 'log.level' must be one of ['none', 'debug', 'info', 'warn', 'error', 'panic', 'fatal']")
+	}
+
 	if cfg.Playground.Enabled {
 		if !cfg.HTTP.Enabled {
 			return errors.New("the HTTP server must be enabled to run the openfga playground")
@@ -343,45 +385,55 @@ func RunServer(ctx context.Context, config *Config) error {
 		return err
 	}
 
-	logger := buildLogger(config.Log.Format)
+	logger := logger.MustNewLogger(config.Log.Format, config.Log.Level)
 	tracer := telemetry.NewNoopTracer()
-	meter := telemetry.NewNoopMeter()
 	tokenEncoder := encoder.NewBase64Encoder()
 
-	var datastore storage.OpenFGADatastore
+	logger.Info(fmt.Sprintf("🧪 experimental features enabled: %v", config.Experimentals))
+
+	var experimentals []server.ExperimentalFeatureFlag
+	for _, feature := range config.Experimentals {
+		experimentals = append(experimentals, server.ExperimentalFeatureFlag(feature))
+	}
+
 	var err error
+	meter := metric.NewNoopMeter()
+
+	if slices.Contains(config.Experimentals, "otel-metrics") {
+
+		protocol := config.OpenTelemetry.Protocol
+		endpoint := config.OpenTelemetry.Endpoint
+
+		logger.Info(fmt.Sprintf("🕵 OpenTelemetry 'otlp' metrics exported to '%s' via protocol '%s'", endpoint, protocol))
+
+		meter, err = telemetry.NewOTLPMeter(ctx, logger, protocol, endpoint)
+		if err != nil {
+			return fmt.Errorf("failed to initialize otlp metrics meter: %w", err)
+		}
+	}
+
+	dsCfg := common.NewConfig(
+		common.WithLogger(logger),
+		common.WithTracer(tracer),
+		common.WithMaxTuplesPerWrite(config.MaxTuplesPerWrite),
+		common.WithMaxTypesPerAuthorizationModel(config.MaxTypesPerAuthorizationModel),
+		common.WithMaxOpenConns(config.Datastore.MaxOpenConns),
+		common.WithMaxIdleConns(config.Datastore.MaxIdleConns),
+		common.WithConnMaxIdleTime(config.Datastore.ConnMaxIdleTime),
+		common.WithConnMaxLifetime(config.Datastore.ConnMaxLifetime),
+	)
+
+	var datastore storage.OpenFGADatastore
 	switch config.Datastore.Engine {
 	case "memory":
 		datastore = memory.New(tracer, config.MaxTuplesPerWrite, config.MaxTypesPerAuthorizationModel)
 	case "mysql":
-		opts := []mysql.MySQLOption{
-			mysql.WithLogger(logger),
-			mysql.WithTracer(tracer),
-			mysql.WithMaxTuplesPerWrite(config.MaxTuplesPerWrite),
-			mysql.WithMaxTypesPerAuthorizationModel(config.MaxTypesPerAuthorizationModel),
-			mysql.WithMaxOpenConns(config.Datastore.MaxOpenConns),
-			mysql.WithMaxIdleConns(config.Datastore.MaxIdleConns),
-			mysql.WithConnMaxIdleTime(config.Datastore.ConnMaxIdleTime),
-			mysql.WithConnMaxLifetime(config.Datastore.ConnMaxLifetime),
-		}
-
-		datastore, err = mysql.NewMySQLDatastore(config.Datastore.URI, opts...)
+		datastore, err = mysql.New(config.Datastore.URI, dsCfg)
 		if err != nil {
 			return fmt.Errorf("failed to initialize mysql datastore: %w", err)
 		}
 	case "postgres":
-		opts := []postgres.PostgresOption{
-			postgres.WithLogger(logger),
-			postgres.WithTracer(tracer),
-			postgres.WithMaxTuplesPerWrite(config.MaxTuplesPerWrite),
-			postgres.WithMaxTypesPerAuthorizationModel(config.MaxTypesPerAuthorizationModel),
-			postgres.WithMaxOpenConns(config.Datastore.MaxOpenConns),
-			postgres.WithMaxIdleConns(config.Datastore.MaxIdleConns),
-			postgres.WithConnMaxIdleTime(config.Datastore.ConnMaxIdleTime),
-			postgres.WithConnMaxLifetime(config.Datastore.ConnMaxLifetime),
-		}
-
-		datastore, err = postgres.NewPostgresDatastore(config.Datastore.URI, opts...)
+		datastore, err = postgres.New(config.Datastore.URI, dsCfg)
 		if err != nil {
 			return fmt.Errorf("failed to initialize postgres datastore: %w", err)
 		}
@@ -474,6 +526,7 @@ func RunServer(ctx context.Context, config *Config) error {
 		ChangelogHorizonOffset: config.ChangelogHorizonOffset,
 		ListObjectsDeadline:    config.ListObjectsDeadline,
 		ListObjectsMaxResults:  config.ListObjectsMaxResults,
+		Experimentals:          experimentals,
 	})
 
 	logger.Info(
@@ -505,7 +558,11 @@ func RunServer(ctx context.Context, config *Config) error {
 
 	go func() {
 		if err := grpcServer.Serve(lis); err != nil {
-			logger.Fatal("failed to start grpc server", zap.Error(err))
+			if !errors.Is(err, grpc.ErrServerStopped) {
+				logger.Fatal("failed to start grpc server", zap.Error(err))
+			}
+
+			logger.Info("grpc server shut down..")
 		}
 	}()
 	logger.Info(fmt.Sprintf("grpc server listening on '%s'...", config.GRPC.Addr))
@@ -700,24 +757,14 @@ func RunServer(ctx context.Context, config *Config) error {
 	return nil
 }
 
-func buildLogger(logFormat string) logger.Logger {
-	openfgaLogger := logger.MustNewTextLogger()
-	if logFormat == "json" {
-		openfgaLogger = logger.MustNewJSONLogger()
-		openfgaLogger.With(
-			zap.String("build.version", build.Version),
-			zap.String("build.commit", build.Commit),
-		)
-	}
-
-	return openfgaLogger
-}
-
 // bindRunFlags binds the cobra cmd flags to the equivalent config value being managed
 // by viper. This bridges the config between cobra flags and viper flags.
 func bindRunFlags(cmd *cobra.Command) {
 
 	defaultConfig := DefaultConfig()
+
+	cmd.Flags().StringSlice("experimentals", defaultConfig.Experimentals, "a list of experimental features to enable")
+	util.MustBindPFlag("experimentals", cmd.Flags().Lookup("experimentals"))
 
 	cmd.Flags().String("grpc-addr", defaultConfig.GRPC.Addr, "the host:port address to serve the grpc server on")
 	util.MustBindPFlag("grpc.addr", cmd.Flags().Lookup("grpc-addr"))
@@ -795,6 +842,9 @@ func bindRunFlags(cmd *cobra.Command) {
 	cmd.Flags().String("log-format", defaultConfig.Log.Format, "the log format to output logs in")
 	util.MustBindPFlag("log.format", cmd.Flags().Lookup("log-format"))
 
+	cmd.Flags().String("log-level", defaultConfig.Log.Level, "the log level to use")
+	util.MustBindPFlag("log.level", cmd.Flags().Lookup("log-level"))
+
 	cmd.Flags().Int("max-tuples-per-write", defaultConfig.MaxTuplesPerWrite, "the maximum allowed number of tuples per Write transaction")
 	util.MustBindPFlag("maxTuplesPerWrite", cmd.Flags().Lookup("max-tuples-per-write"))
 
@@ -812,4 +862,10 @@ func bindRunFlags(cmd *cobra.Command) {
 
 	cmd.Flags().Uint32("listObjects-max-results", defaultConfig.ListObjectsMaxResults, "the maximum results to return in ListObjects responses")
 	util.MustBindPFlag("listObjectsMaxResults", cmd.Flags().Lookup("listObjects-max-results"))
+
+	cmd.Flags().String("otel-telemetry-endpoint", defaultConfig.OpenTelemetry.Endpoint, "OpenTelemetry collector endpoint to use")
+	util.MustBindPFlag("otel.metrics.endpoint", cmd.Flags().Lookup("otel-telemetry-endpoint"))
+
+	cmd.Flags().String("otel-telemetry-protocol", defaultConfig.OpenTelemetry.Protocol, "OpenTelemetry protocol to use to send OTLP metrics")
+	util.MustBindPFlag("otel.metrics.protocol", cmd.Flags().Lookup("otel-telemetry-protocol"))
 }

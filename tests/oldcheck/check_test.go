@@ -18,7 +18,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	healthv1pb "google.golang.org/grpc/health/grpc_health_v1"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 type checkTests struct {
@@ -61,6 +61,7 @@ func testCheck(t *testing.T, engine string) {
 	container := storage.RunDatastoreTestContainer(t, engine)
 
 	cfg := cmd.MustDefaultConfigWithRandomPorts()
+	cfg.Log.Level = "none"
 	cfg.Datastore.Engine = engine
 	cfg.Datastore.URI = container.GetConnectionURI()
 

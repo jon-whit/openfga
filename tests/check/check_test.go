@@ -18,28 +18,32 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	healthv1pb "google.golang.org/grpc/health/grpc_health_v1"
-	"gopkg.in/yaml.v2"
+	"google.golang.org/grpc/status"
+	"gopkg.in/yaml.v3"
 )
 
 type checkTests struct {
-	Tests []checkTest
+	Tests []*checkTest
 }
 
 type checkTest struct {
 	Name   string
-	Stages []stage
+	Stages []*stage
 }
 
+// stage is a stage of a test. All stages will be run in a single store.
 type stage struct {
 	Model      string
 	Tuples     []*pb.TupleKey
-	Assertions []assertion
+	Assertions []*assertion
 }
 
 type assertion struct {
-	Tuple       *pb.TupleKey
-	Expectation bool
-	Trace       string
+	Tuple            *pb.TupleKey
+	ContextualTuples []*pb.TupleKey `yaml:"contextualTuples"`
+	Expectation      bool
+	ErrorCode        int `yaml:"errorCode"` // If ErrorCode is non-zero then we expect that the check call failed.
+	Trace            string
 }
 
 func TestCheckMemory(t *testing.T) {
@@ -65,6 +69,7 @@ func testCheck(t *testing.T, engine string) {
 	container := storage.RunDatastoreTestContainer(t, engine)
 
 	cfg := cmd.MustDefaultConfigWithRandomPorts()
+	cfg.Log.Level = "none"
 	cfg.Datastore.Engine = engine
 	cfg.Datastore.URI = container.GetConnectionURI()
 
@@ -110,13 +115,13 @@ func runTests(t *testing.T, client pb.OpenFGAServiceClient, tests checkTests) {
 	ctx := context.Background()
 
 	for _, test := range tests.Tests {
-		for _, stage := range test.Stages {
-			t.Run(test.Name, func(t *testing.T) {
-				resp, err := client.CreateStore(ctx, &pb.CreateStoreRequest{Name: test.Name})
-				require.NoError(t, err)
+		resp, err := client.CreateStore(ctx, &pb.CreateStoreRequest{Name: test.Name})
+		require.NoError(t, err)
 
-				storeID := resp.GetId()
+		storeID := resp.GetId()
 
+		t.Run(test.Name, func(t *testing.T) {
+			for _, stage := range test.Stages {
 				_, err = client.WriteAuthorizationModel(ctx, &pb.WriteAuthorizationModelRequest{
 					StoreId:         storeID,
 					SchemaVersion:   typesystem.SchemaVersion1_1,
@@ -124,10 +129,10 @@ func runTests(t *testing.T, client pb.OpenFGAServiceClient, tests checkTests) {
 				})
 				require.NoError(t, err)
 
-				for _, tuple := range stage.Tuples {
+				if len(stage.Tuples) > 0 {
 					_, err = client.Write(ctx, &pb.WriteRequest{
 						StoreId: storeID,
-						Writes:  &pb.TupleKeys{TupleKeys: []*pb.TupleKey{tuple}},
+						Writes:  &pb.TupleKeys{TupleKeys: stage.Tuples},
 					})
 					require.NoError(t, err)
 				}
@@ -136,15 +141,27 @@ func runTests(t *testing.T, client pb.OpenFGAServiceClient, tests checkTests) {
 					resp, err := client.Check(ctx, &pb.CheckRequest{
 						StoreId:  storeID,
 						TupleKey: assertion.Tuple,
-						Trace:    true,
+						ContextualTuples: &pb.ContextualTupleKeys{
+							TupleKeys: assertion.ContextualTuples,
+						},
+						Trace: true,
 					})
-					require.NoError(t, err)
-					require.Equal(t, assertion.Expectation, resp.Allowed, assertion)
-					if assertion.Trace != "" {
-						require.Equal(t, assertion.Trace, resp.GetResolution())
+
+					if assertion.ErrorCode == 0 {
+						require.NoError(t, err)
+						require.Equal(t, assertion.Expectation, resp.Allowed, assertion)
+						if assertion.Trace != "" {
+							require.Equal(t, assertion.Trace, resp.GetResolution())
+						}
+					} else {
+						require.Error(t, err)
+						e, ok := status.FromError(err)
+						require.True(t, ok)
+						require.Equal(t, assertion.ErrorCode, int(e.Code()))
 					}
+
 				}
-			})
-		}
+			}
+		})
 	}
 }
