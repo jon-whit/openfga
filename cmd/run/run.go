@@ -36,6 +36,7 @@ import (
 	"github.com/openfga/openfga/pkg/storage"
 	"github.com/openfga/openfga/pkg/storage/caching"
 	"github.com/openfga/openfga/pkg/storage/common"
+	"github.com/openfga/openfga/pkg/storage/hedger"
 	"github.com/openfga/openfga/pkg/storage/memory"
 	"github.com/openfga/openfga/pkg/storage/mysql"
 	"github.com/openfga/openfga/pkg/storage/postgres"
@@ -536,7 +537,7 @@ func RunServer(ctx context.Context, config *Config) error {
 	}
 
 	svr := server.New(&server.Dependencies{
-		Datastore:    datastore,
+		Datastore:    hedger.NewHedgedDatastore(datastore, 0.95),
 		Logger:       logger,
 		Meter:        meter,
 		TokenEncoder: encoder.NewBase64Encoder(),
