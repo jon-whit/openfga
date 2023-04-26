@@ -184,6 +184,7 @@ func (t *TypeSystem) GetRelations(objectType string) (map[string]*openfgapb.Rela
 
 		if metadata, ok := td.GetMetadata().GetRelations()[relation]; ok {
 			r.TypeInfo.DirectlyRelatedUserTypes = metadata.GetDirectlyRelatedUserTypes()
+			r.Condition = metadata.GetCondition()
 		}
 
 		relations[relation] = r

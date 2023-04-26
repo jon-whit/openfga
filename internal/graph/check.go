@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
+	"reflect"
 	"sync"
 
+	"github.com/google/cel-go/cel"
 	"github.com/openfga/openfga/internal/validation"
 	"github.com/openfga/openfga/pkg/storage"
 	"github.com/openfga/openfga/pkg/tuple"
@@ -14,6 +17,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 var tracer = otel.Tracer("internal/graph/check")
@@ -30,10 +34,19 @@ type ResolveCheckRequest struct {
 	TupleKey             *openfgapb.TupleKey
 	ContextualTuples     []*openfgapb.TupleKey
 	ResolutionMetadata   *ResolutionMetadata
+	Context              *structpb.Struct
 }
 
 type ResolveCheckResponse struct {
 	Allowed bool
+}
+
+func (r *ResolveCheckRequest) GetContext() *structpb.Struct {
+	if r != nil {
+		return r.Context
+	}
+
+	return nil
 }
 
 func (r *ResolveCheckRequest) GetStoreID() string {
@@ -345,6 +358,52 @@ func (c *LocalChecker) ResolveCheck(
 	rel, err := typesys.GetRelation(objectType, relation)
 	if err != nil {
 		return nil, fmt.Errorf("relation '%s' undefined for object type '%s'", relation, objectType)
+	}
+
+	conditionalParams := rel.GetCondition().GetParameters()
+	conditionalExp := rel.GetCondition().GetExpression()
+
+	var envOpts []cel.EnvOption
+	for param, paramtype := range conditionalParams {
+		switch paramtype {
+		case "string":
+			envOpts = append(envOpts, cel.Variable(param, cel.StringType))
+		}
+	}
+
+	env, err := cel.NewEnv(envOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to construct CEL env: %v", err)
+	}
+
+	ast, issues := env.Compile(string(conditionalExp))
+	if issues != nil && issues.Err() != nil {
+		return nil, fmt.Errorf("failed to compile conditional exp: %v", err)
+	}
+
+	prg, err := env.Program(ast)
+	if err != nil {
+		return nil, fmt.Errorf("conditional expression construction error: %s", err)
+	}
+
+	out, _, err := prg.Eval(req.Context.AsMap())
+	if err != nil {
+		return nil, fmt.Errorf("failed to evaluate conditional expression: %v", err)
+	}
+
+	conditionMetVal, err := out.ConvertToNative(reflect.TypeOf(false))
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert condition to bool: %v", err)
+	}
+
+	conditionMet, ok := conditionMetVal.(bool)
+	if !ok {
+		return nil, fmt.Errorf("expected bool condition")
+	}
+
+	if !conditionMet {
+		log.Println("GOT HERE")
+		return &ResolveCheckResponse{Allowed: false}, nil
 	}
 
 	resp, err := union(ctx, c.concurrencyLimit, c.checkRewrite(ctx, req, rel.GetRewrite()))

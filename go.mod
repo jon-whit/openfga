@@ -2,6 +2,8 @@ module github.com/openfga/openfga
 
 go 1.20
 
+replace go.buf.build/openfga/go/openfga/api => /Users/jonwhit/github/openfga/api/proto
+
 require (
 	github.com/Masterminds/squirrel v1.5.4
 	github.com/MicahParks/keyfunc v1.9.0
@@ -13,6 +15,7 @@ require (
 	github.com/go-sql-driver/mysql v1.7.0
 	github.com/golang-jwt/jwt/v4 v4.5.0
 	github.com/golang/mock v1.6.0
+	github.com/google/cel-go v0.14.0
 	github.com/google/go-cmp v0.5.9
 	github.com/google/uuid v1.3.0
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
@@ -31,6 +34,7 @@ require (
 	github.com/stretchr/testify v1.8.2
 	github.com/tidwall/gjson v1.14.4
 	go.buf.build/openfga/go/openfga/api v1.2.50
+	//go.buf.build/openfga/go/openfga/api v1.2.50
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.40.0
 	go.opentelemetry.io/otel v1.14.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.14.0
@@ -51,6 +55,7 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/docker/distribution v2.8.1+incompatible // indirect
 	github.com/docker/go-units v0.5.0 // indirect
+	github.com/envoyproxy/protoc-gen-validate v0.9.1 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
 	github.com/go-logr/logr v1.2.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -79,11 +84,10 @@ require (
 	github.com/spf13/afero v1.9.5 // indirect
 	github.com/spf13/cast v1.5.0 // indirect
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect
+	github.com/stoewer/go-strcase v1.2.0 // indirect
 	github.com/subosito/gotenv v1.4.2 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.0 // indirect
-	go.buf.build/openfga/go/envoyproxy/protoc-gen-validate v1.2.8 // indirect
-	go.buf.build/openfga/go/grpc-ecosystem/grpc-gateway v1.2.50 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/internal/retry v1.14.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.14.0 // indirect
 	go.opentelemetry.io/otel/metric v0.37.0 // indirect

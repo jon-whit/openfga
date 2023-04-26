@@ -275,6 +275,7 @@ func (s *Server) Check(ctx context.Context, req *openfgapb.CheckRequest) (*openf
 		ResolutionMetadata: &graph.ResolutionMetadata{
 			Depth: s.config.ResolveNodeLimit,
 		},
+		Context: req.GetContext(),
 	})
 	if err != nil {
 		if errors.Is(err, graph.ErrResolutionDepthExceeded) {
