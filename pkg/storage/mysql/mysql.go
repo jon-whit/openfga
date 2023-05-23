@@ -227,7 +227,12 @@ func (m *MySQL) ReadUserTuple(ctx context.Context, store string, tupleKey *openf
 		return nil, sqlcommon.HandleSQLError(err)
 	}
 
-	return record.AsTuple(), nil
+	tuple, err := record.AsTuple()
+	if err != nil {
+		return nil, sqlcommon.HandleSQLError(err)
+	}
+
+	return tuple, nil
 }
 
 func (m *MySQL) ReadUsersetTuples(ctx context.Context, store string, filter storage.ReadUsersetTuplesFilter) (storage.TupleIterator, error) {

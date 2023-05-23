@@ -33,7 +33,7 @@ require (
 	github.com/spf13/viper v1.15.0
 	github.com/stretchr/testify v1.8.2
 	github.com/tidwall/gjson v1.14.4
-	go.buf.build/openfga/go/openfga/api v1.2.50
+	//go.buf.build/openfga/go/openfga/api v1.2.50
 	//go.buf.build/openfga/go/openfga/api v1.2.50
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.40.0
 	go.opentelemetry.io/otel v1.14.0
@@ -95,7 +95,7 @@ require (
 	go.uber.org/atomic v1.10.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/crypto v0.7.0 // indirect
-	golang.org/x/exp v0.0.0-20230321023759-10a507213a29 // indirect
+	golang.org/x/exp v0.0.0-20230321023759-10a507213a29
 	golang.org/x/mod v0.9.0 // indirect
 	golang.org/x/net v0.8.0 // indirect
 	golang.org/x/sys v0.6.0 // indirect
@@ -105,3 +105,5 @@ require (
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gotest.tools/v3 v3.4.0 // indirect
 )
+
+require go.buf.build/openfga/go/openfga/api v1.2.48

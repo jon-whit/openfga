@@ -16,6 +16,8 @@ import (
 	"github.com/openfga/openfga/pkg/storage"
 	tupleUtils "github.com/openfga/openfga/pkg/tuple"
 	openfgapb "go.buf.build/openfga/go/openfga/api/openfga/v1"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -111,24 +113,38 @@ func NewConfig(opts ...DatastoreOption) *Config {
 }
 
 type TupleRecord struct {
-	Store      string
-	ObjectType string
-	ObjectID   string
-	Relation   string
-	User       string
-	Ulid       string
-	InsertedAt time.Time
+	Store            string
+	ObjectType       string
+	ObjectID         string
+	Relation         string
+	User             string
+	ConditionName    string
+	ConditionContext string
+	Ulid             string
+	InsertedAt       time.Time
 }
 
-func (t *TupleRecord) AsTuple() *openfgapb.Tuple {
+func (t *TupleRecord) AsTuple() (*openfgapb.Tuple, error) {
+
+	contextpb := &structpb.Struct{}
+
+	err := protojson.Unmarshal([]byte(t.ConditionContext), contextpb)
+	if err != nil {
+		return nil, fmt.Errorf("failed to protojson.Unmarshal the relationship tuple condition context: %w", err)
+	}
+
 	return &openfgapb.Tuple{
 		Key: &openfgapb.TupleKey{
 			Object:   tupleUtils.BuildObject(t.ObjectType, t.ObjectID),
 			Relation: t.Relation,
 			User:     t.User,
+			OptionalCondition: &openfgapb.RelationshipCondition{
+				ConditionName: t.ConditionName,
+				Context:       contextpb,
+			},
 		},
 		Timestamp: timestamppb.New(t.InsertedAt),
-	}
+	}, nil
 }
 
 type ContToken struct {
@@ -197,7 +213,13 @@ func (t *SQLTupleIterator) ToArray(opts storage.PaginationOptions) ([]*openfgapb
 			}
 			return nil, nil, err
 		}
-		res = append(res, tupleRecord.AsTuple())
+
+		tuple, err := tupleRecord.AsTuple()
+		if err != nil {
+			return nil, nil, err
+		}
+
+		res = append(res, tuple)
 	}
 
 	// Check if we are at the end of the iterator. If we are then we do not need to return a continuation token.
@@ -224,7 +246,7 @@ func (t *SQLTupleIterator) Next() (*openfgapb.Tuple, error) {
 		return nil, err
 	}
 
-	return record.AsTuple(), nil
+	return record.AsTuple()
 }
 
 func (t *SQLTupleIterator) Stop() {
@@ -358,14 +380,19 @@ func Write(ctx context.Context, dbInfo *DBInfo, store string, deletes storage.De
 
 	insertBuilder := dbInfo.stbl.
 		Insert("tuple").
-		Columns("store", "object_type", "object_id", "relation", "_user", "user_type", "ulid", "inserted_at")
+		Columns("store", "object_type", "object_id", "relation", "_user", "user_type", "condition_name", "condition_context", "ulid", "inserted_at")
 
 	for _, tk := range writes {
 		id := ulid.MustNew(ulid.Timestamp(now), ulid.DefaultEntropy()).String()
 		objectType, objectID := tupleUtils.SplitObject(tk.GetObject())
 
+		serializedContext, err := protojson.Marshal(tk.GetOptionalCondition().GetContext())
+		if err != nil {
+			return fmt.Errorf("failed to protojson.Marshal the Write context: %w", err)
+		}
+
 		_, err = insertBuilder.
-			Values(store, objectType, objectID, tk.GetRelation(), tk.GetUser(), tupleUtils.GetUserTypeFromUser(tk.GetUser()), id, dbInfo.sqlTime).
+			Values(store, objectType, objectID, tk.GetRelation(), tk.GetUser(), tupleUtils.GetUserTypeFromUser(tk.GetUser()), tk.GetOptionalCondition().GetConditionName(), serializedContext, id, dbInfo.sqlTime).
 			RunWith(txn). // Part of a txn
 			ExecContext(ctx)
 		if err != nil {

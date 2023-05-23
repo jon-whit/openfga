@@ -4,12 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
-	"reflect"
 	"sync"
 
-	"github.com/google/cel-go/cel"
 	"github.com/openfga/openfga/internal/validation"
+	"github.com/openfga/openfga/pkg/conditions"
 	"github.com/openfga/openfga/pkg/storage"
 	"github.com/openfga/openfga/pkg/tuple"
 	"github.com/openfga/openfga/pkg/typesystem"
@@ -359,52 +357,69 @@ func (c *LocalChecker) ResolveCheck(
 	if err != nil {
 		return nil, fmt.Errorf("relation '%s' undefined for object type '%s'", relation, objectType)
 	}
+	// var envOpts []cel.EnvOption
 
-	conditionalParams := rel.GetCondition().GetParameters()
-	conditionalExp := rel.GetCondition().GetExpression()
+	// for _, customTypeOpts := range types.CustomParamTypes {
+	// 	envOpts = append(envOpts, customTypeOpts...)
+	// }
 
-	var envOpts []cel.EnvOption
-	for param, paramtype := range conditionalParams {
-		switch paramtype {
-		case "string":
-			envOpts = append(envOpts, cel.Variable(param, cel.StringType))
-		}
-	}
+	// conditionParamTypes := map[string]*types.ParameterType{}
+	// for paramName, paramTypeRef := range conditionParamTypeRefs {
+	// 	paramType, err := types.DecodeParameterType(paramTypeRef)
+	// 	if err != nil {
+	// 		log.Fatalf("failed to decode parameter type for parameter '%s': %v", paramName, err)
+	// 	}
 
-	env, err := cel.NewEnv(envOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to construct CEL env: %v", err)
-	}
+	// 	conditionParamTypes[paramName] = paramType
+	// }
 
-	ast, issues := env.Compile(string(conditionalExp))
-	if issues != nil && issues.Err() != nil {
-		return nil, fmt.Errorf("failed to compile conditional exp: %v", err)
-	}
+	// for paramName, paramType := range conditionParamTypes {
+	// 	envOpts = append(envOpts, cel.Variable(paramName, paramType.CelType()))
+	// }
 
-	prg, err := env.Program(ast)
-	if err != nil {
-		return nil, fmt.Errorf("conditional expression construction error: %s", err)
-	}
+	// env, err := cel.NewEnv(envOpts...)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("failed to construct CEL env: %v", err)
+	// }
 
-	out, _, err := prg.Eval(req.Context.AsMap())
-	if err != nil {
-		return nil, fmt.Errorf("failed to evaluate conditional expression: %v", err)
-	}
+	// ast, issues := env.Compile(conditionalExp)
+	// if issues != nil && issues.Err() != nil {
+	// 	return nil, fmt.Errorf("failed to compile conditional exp: %v", err)
+	// }
 
-	conditionMetVal, err := out.ConvertToNative(reflect.TypeOf(false))
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert condition to bool: %v", err)
-	}
+	// prg, err := env.Program(ast)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("conditional expression construction error: %s", err)
+	// }
 
-	conditionMet, ok := conditionMetVal.(bool)
-	if !ok {
-		return nil, fmt.Errorf("expected bool condition")
-	}
+	// if !reflect.DeepEqual(ast.OutputType(), cel.BoolType) {
+	// 	return nil, fmt.Errorf("expected boolean expression output in relationship condition")
+	// }
 
-	if !conditionMet {
-		log.Println("GOT HERE")
-		return &ResolveCheckResponse{Allowed: false}, nil
-	}
+	// typedParams, err := conditions.ConvertContextToTypedParameters(req.GetContext().AsMap(), conditionParamTypeRefs)
+	// if err != nil {
+	// 	log.Fatalf("failed to convert context to typed parameter values: %v", err)
+	// }
+
+	// out, _, err := prg.Eval(typedParams)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("failed to evaluate conditional expression: %v", err)
+	// }
+
+	// conditionMetVal, err := out.ConvertToNative(reflect.TypeOf(false))
+	// if err != nil {
+	// 	return nil, fmt.Errorf("failed to convert condition to bool: %v", err)
+	// }
+
+	// conditionMet, ok := conditionMetVal.(bool)
+	// if !ok {
+	// 	return nil, fmt.Errorf("expected bool condition")
+	// }
+
+	// if !conditionMet {
+	// 	log.Println("GOT HERE")
+	// 	return &ResolveCheckResponse{Allowed: false}, nil
+	// }
 
 	resp, err := union(ctx, c.concurrencyLimit, c.checkRewrite(ctx, req, rel.GetRewrite()))
 	if err != nil {
@@ -436,6 +451,11 @@ func (c *LocalChecker) checkDirect(parentctx context.Context, req *ResolveCheckR
 		objectType := tuple.GetType(tk.GetObject())
 		relation := tk.GetRelation()
 
+		rel, err := typesys.GetRelation(objectType, relation)
+		if err != nil {
+			return nil, err
+		}
+
 		fn1 := func(ctx context.Context) (*openfgapb.CheckResponse, error) {
 			ctx, span := tracer.Start(ctx, "checkDirectUserTuple", trace.WithAttributes(attribute.String("tuple_key", tk.String())))
 			defer span.End()
@@ -453,6 +473,22 @@ func (c *LocalChecker) checkDirect(parentctx context.Context, req *ResolveCheckR
 			err = validation.ValidateTuple(typesys, tk)
 
 			if t != nil && err == nil {
+				fmt.Printf("%v\n", rel.GetCondition().GetExpression())
+				fmt.Printf("%v\n", rel.GetCondition().GetParameters())
+				conditionResult, err := conditions.EvaluateConditionExpression(
+					rel.GetCondition().GetExpression(),
+					rel.GetCondition().GetParameters(),
+					req.GetContext().AsMap(),
+					t.GetKey().GetOptionalCondition().GetContext().AsMap(),
+				)
+				if err != nil {
+					return nil, fmt.Errorf("failed to evaluate relationship condition: %v", err)
+				}
+
+				if !conditionResult.ConditionMet {
+					return &openfgapb.CheckResponse{Allowed: false}, nil
+				}
+
 				span.SetAttributes(attribute.Bool("allowed", true))
 				return &openfgapb.CheckResponse{Allowed: true}, nil
 			}
