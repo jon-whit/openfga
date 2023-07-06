@@ -1,7 +1,9 @@
+// Package check contains integration tests for the Check API.
 package check
 
 import (
 	"context"
+	"math"
 	"testing"
 
 	v1parser "github.com/craigpastro/openfga-dsl-parser"
@@ -17,6 +19,8 @@ import (
 	"google.golang.org/grpc/status"
 	"gopkg.in/yaml.v3"
 )
+
+var writeMaxChunkSize = 40 // chunk write requests into a chunks of this max size
 
 type individualTest struct {
 	Name   string
@@ -72,10 +76,6 @@ func testCheck(t *testing.T, client ClientInterface) {
 		t.Parallel()
 		runSchema1_1CheckTests(t, client)
 	})
-	t.Run("Schema1_0", func(t *testing.T) {
-		t.Parallel()
-		runSchema1_0CheckTests(t, client)
-	})
 }
 
 func testBadAuthModelID(t *testing.T, client ClientInterface) {
@@ -113,18 +113,12 @@ func runSchema1_1CheckTests(t *testing.T, client ClientInterface) {
 	runTests(t, testParams{typesystem.SchemaVersion1_1, client})
 }
 
-func runSchema1_0CheckTests(t *testing.T, client ClientInterface) {
-	runTests(t, testParams{typesystem.SchemaVersion1_0, client})
-}
-
 func runTests(t *testing.T, params testParams) {
 	var b []byte
 	var err error
 	schemaVersion := params.schemaVersion
 	if schemaVersion == typesystem.SchemaVersion1_1 {
 		b, err = assets.EmbedTests.ReadFile("tests/consolidated_1_1_tests.yaml")
-	} else {
-		b, err = assets.EmbedTests.ReadFile("tests/consolidated_1_0_tests.yaml")
 	}
 	require.NoError(t, err)
 
@@ -180,12 +174,19 @@ func runTest(t *testing.T, test individualTest, params testParams, contextTupleT
 			})
 			require.NoError(t, err)
 
-			if len(stage.Tuples) > 0 && !contextTupleTest {
-				_, err = client.Write(ctx, &openfgapb.WriteRequest{
-					StoreId: storeID,
-					Writes:  &openfgapb.TupleKeys{TupleKeys: stage.Tuples},
-				})
-				require.NoError(t, err)
+			tuples := stage.Tuples
+			tuplesLength := len(tuples)
+			// arrange: write tuples
+			if tuplesLength > 0 && !contextTupleTest {
+				for i := 0; i < tuplesLength; i += writeMaxChunkSize {
+					end := int(math.Min(float64(i+writeMaxChunkSize), float64(tuplesLength)))
+					writeChunk := (tuples)[i:end]
+					_, err = client.Write(ctx, &openfgapb.WriteRequest{
+						StoreId: storeID,
+						Writes:  &openfgapb.TupleKeys{TupleKeys: writeChunk},
+					})
+					require.NoError(t, err)
+				}
 			}
 
 			for _, assertion := range stage.CheckAssertions {

@@ -122,39 +122,19 @@ func TestListObjectsRespectsMaxResults(t *testing.T, ds storage.OpenFGADatastore
 			allResults:             []string{"org:1", "org:2", "org:3"},
 		},
 		{
-			name:   "respects_when_schema_1_0",
-			schema: typesystem.SchemaVersion1_0,
+			name:   "respects_when_schema_1_1_and_maxresults_is_higher_than_actual_result_length",
+			schema: typesystem.SchemaVersion1_1,
 			model: `
-			type document
-			  relations
-			    define admin as self
-			`,
-			tuples: []*openfgapb.TupleKey{
-				tuple.NewTupleKey("document:1", "admin", "bob"),
-				tuple.NewTupleKey("document:2", "admin", "bob"),
-			},
-			user:       "bob",
-			objectType: "document",
-			relation:   "admin",
-			contextualTuples: &openfgapb.ContextualTupleKeys{
-				TupleKeys: []*openfgapb.TupleKey{tuple.NewTupleKey("document:3", "admin", "bob")},
-			},
-			maxResults:             2,
-			minimumResultsExpected: 2,
-			allResults:             []string{"document:1", "document:2", "document:3"},
-		},
-		{
-			name:   "respects_when_schema_1_0_and_maxresults_is_higher_than_actual_result_length",
-			schema: typesystem.SchemaVersion1_0,
-			model: `
+			type user
+
 			type team
 			  relations
-			    define admin as self
+			    define admin: [user] as self
 			`,
 			tuples: []*openfgapb.TupleKey{
-				tuple.NewTupleKey("team:1", "admin", "bob"),
+				tuple.NewTupleKey("team:1", "admin", "user:bob"),
 			},
-			user:                   "bob",
+			user:                   "user:bob",
 			objectType:             "team",
 			relation:               "admin",
 			maxResults:             2,
@@ -218,15 +198,16 @@ func TestListObjectsRespectsMaxResults(t *testing.T, ds storage.OpenFGADatastore
 				datastore = mocks.NewMockSlowDataStorage(ds, test.readTuplesDelay)
 			}
 
+			ctx = typesystem.ContextWithTypesystem(ctx, typesystem.New(model))
+
 			listObjectsQuery := &commands.ListObjectsQuery{
 				Datastore:             datastore,
 				Logger:                logger.NewNoopLogger(),
 				ListObjectsDeadline:   listObjectsDeadline,
 				ListObjectsMaxResults: test.maxResults,
-				ResolveNodeLimit:      defaultResolveNodeLimit,
+				ResolveNodeLimit:      DefaultResolveNodeLimit,
+				CheckConcurrencyLimit: 100,
 			}
-			typesys := typesystem.New(model)
-			ctx = typesystem.ContextWithTypesystem(ctx, typesys)
 
 			// assertions
 			t.Run("streaming_endpoint", func(t *testing.T) {
@@ -255,9 +236,8 @@ func TestListObjectsRespectsMaxResults(t *testing.T, ds storage.OpenFGADatastore
 				<-done
 
 				require.NoError(t, err)
-				require.LessOrEqual(t, len(streamedObjectIds), int(test.maxResults))
 				require.GreaterOrEqual(t, len(streamedObjectIds), int(test.minimumResultsExpected))
-				require.Subset(t, test.allResults, streamedObjectIds)
+				require.ElementsMatch(t, test.allResults, streamedObjectIds)
 			})
 
 			t.Run("regular_endpoint", func(t *testing.T) {
@@ -332,9 +312,12 @@ func BenchmarkListObjectsWithReverseExpand(b *testing.B, ds storage.OpenFGADatas
 	}
 
 	listObjectsQuery := commands.ListObjectsQuery{
-		Datastore:        ds,
-		Logger:           logger.NewNoopLogger(),
-		ResolveNodeLimit: defaultResolveNodeLimit,
+		Datastore:             ds,
+		Logger:                logger.NewNoopLogger(),
+		ListObjectsDeadline:   3 * time.Second,
+		ListObjectsMaxResults: 1000,
+		ResolveNodeLimit:      DefaultResolveNodeLimit,
+		CheckConcurrencyLimit: 100,
 	}
 
 	var r *openfgapb.ListObjectsResponse
@@ -359,17 +342,19 @@ func BenchmarkListObjectsWithConcurrentChecks(b *testing.B, ds storage.OpenFGADa
 	ctx := context.Background()
 	store := ulid.Make().String()
 
+	typedefs := parser.MustParse(`
+	type user
+
+	type document
+	  relations
+	    define allowed: [user] as self
+	    define viewer: [user] as self and allowed
+	`)
+
 	model := &openfgapb.AuthorizationModel{
-		Id:            ulid.Make().String(),
-		SchemaVersion: typesystem.SchemaVersion1_0,
-		TypeDefinitions: []*openfgapb.TypeDefinition{
-			{
-				Type: "document",
-				Relations: map[string]*openfgapb.Userset{
-					"viewer": typesystem.This(),
-				},
-			},
-		},
+		Id:              ulid.Make().String(),
+		SchemaVersion:   typesystem.SchemaVersion1_1,
+		TypeDefinitions: typedefs,
 	}
 	err := ds.WriteAuthorizationModel(ctx, store, model)
 	require.NoError(b, err)
@@ -378,11 +363,15 @@ func BenchmarkListObjectsWithConcurrentChecks(b *testing.B, ds storage.OpenFGADa
 	for i := 0; i < 100; i++ {
 		var tuples []*openfgapb.TupleKey
 
-		for j := 0; j < ds.MaxTuplesPerWrite(); j++ {
+		for j := 0; j < ds.MaxTuplesPerWrite()/2; j++ {
 			obj := fmt.Sprintf("document:%s", strconv.Itoa(n))
 			user := fmt.Sprintf("user:%s", strconv.Itoa(n))
 
-			tuples = append(tuples, tuple.NewTupleKey(obj, "viewer", user))
+			tuples = append(
+				tuples,
+				tuple.NewTupleKey(obj, "viewer", user),
+				tuple.NewTupleKey(obj, "allowed", user),
+			)
 
 			n += 1
 		}
@@ -392,9 +381,12 @@ func BenchmarkListObjectsWithConcurrentChecks(b *testing.B, ds storage.OpenFGADa
 	}
 
 	listObjectsQuery := commands.ListObjectsQuery{
-		Datastore:        ds,
-		Logger:           logger.NewNoopLogger(),
-		ResolveNodeLimit: defaultResolveNodeLimit,
+		Datastore:             ds,
+		Logger:                logger.NewNoopLogger(),
+		ListObjectsDeadline:   3 * time.Second,
+		ListObjectsMaxResults: 1000,
+		ResolveNodeLimit:      DefaultResolveNodeLimit,
+		CheckConcurrencyLimit: 100,
 	}
 
 	var r *openfgapb.ListObjectsResponse

@@ -32,30 +32,18 @@
             "x-env-variable": "OPENFGA_LIST_OBJECTS_DEADLINE"
         },
         "listObjectsMaxResults": {
-            "description": "The maximum results to return in ListObjects responses",
+            "description": "The maximum results to return in the non-streaming ListObjects API response. If 0, all results can be returned",
             "type": "integer",
             "minimum": 0,
             "default": 1000,
             "x-env-variable": "OPENFGA_LIST_OBJECTS_MAX_RESULTS"
-        },
-        "allowWriting1_0Models": {
-            "description": "Allow calling WriteAuthorizationModel with models that have 1.0 schema version",
-            "type": "boolean",
-            "default": false,
-            "x-env-variable": "OPENFGA_ALLOW_WRITING_1_0_MODELS"
-        },
-        "allowEvaluating1_0Models": {
-            "description": "Allow calling Check, Expand, ListObjects, Write Assertions with models that have 1.0 schema version",
-            "type": "boolean",
-            "default": false,
-            "x-env-variable": "OPENFGA_ALLOW_EVALUATING_1_0_MODELS"
         },
         "experimentals": {
             "description": "a list of experimental features to enable",
             "type": "array",
             "items": {
                 "type": "string",
-                "enum": ["otel-metrics"]
+                "enum": []
             },
             "default": [],
             "x-env-variable": "OPENFGA_EXPERIMENTALS"

@@ -16,14 +16,13 @@ import (
 
 // ExpandQuery resolves a target TupleKey into a UsersetTree by expanding type definitions.
 type ExpandQuery struct {
-	logger        logger.Logger
-	datastore     storage.OpenFGADatastore
-	allowSchema10 bool
+	logger    logger.Logger
+	datastore storage.OpenFGADatastore
 }
 
 // NewExpandQuery creates a new ExpandQuery using the supplied backends for retrieving data.
-func NewExpandQuery(datastore storage.OpenFGADatastore, logger logger.Logger, allowSchema10 bool) *ExpandQuery {
-	return &ExpandQuery{logger: logger, datastore: datastore, allowSchema10: allowSchema10}
+func NewExpandQuery(datastore storage.OpenFGADatastore, logger logger.Logger) *ExpandQuery {
+	return &ExpandQuery{logger: logger, datastore: datastore}
 }
 
 func (q *ExpandQuery) Execute(ctx context.Context, req *openfgapb.ExpandRequest) (*openfgapb.ExpandResponse, error) {
@@ -48,10 +47,13 @@ func (q *ExpandQuery) Execute(ctx context.Context, req *openfgapb.ExpandRequest)
 		return nil, serverErrors.HandleError("", err)
 	}
 
-	typesys := typesystem.New(model)
+	if !typesystem.IsSchemaVersionSupported(model.GetSchemaVersion()) {
+		return nil, serverErrors.ValidationError(typesystem.ErrInvalidSchemaVersion)
+	}
 
-	if ProhibitModel1_0(typesys.GetSchemaVersion(), q.allowSchema10) {
-		return nil, serverErrors.ValidationError(ErrObsoleteAuthorizationModel)
+	typesys, err := typesystem.NewAndValidate(ctx, model)
+	if err != nil {
+		return nil, serverErrors.ValidationError(typesystem.ErrInvalidModel)
 	}
 
 	if err = validation.ValidateObject(typesys, tk); err != nil {
