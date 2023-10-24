@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/openfga/openfga/cmd"
+	"github.com/openfga/openfga/cmd/indexer"
 	"github.com/openfga/openfga/cmd/migrate"
 	"github.com/openfga/openfga/cmd/run"
 	"github.com/openfga/openfga/cmd/validatemodels"
@@ -15,6 +16,9 @@ func main() {
 
 	runCmd := run.NewRunCommand()
 	rootCmd.AddCommand(runCmd)
+
+	runIndexerCmd := indexer.NewRunIndexerCommand()
+	rootCmd.AddCommand(runIndexerCmd)
 
 	migrateCmd := migrate.NewMigrateCommand()
 	rootCmd.AddCommand(migrateCmd)

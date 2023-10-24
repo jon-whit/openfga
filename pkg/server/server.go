@@ -24,6 +24,7 @@ import (
 	httpmiddleware "github.com/openfga/openfga/pkg/middleware/http"
 	"github.com/openfga/openfga/pkg/middleware/validator"
 	"github.com/openfga/openfga/pkg/server/commands"
+	"github.com/openfga/openfga/pkg/server/commands/listusers"
 	serverErrors "github.com/openfga/openfga/pkg/server/errors"
 	"github.com/openfga/openfga/pkg/storage"
 	"github.com/openfga/openfga/pkg/storage/storagewrappers"
@@ -607,6 +608,25 @@ func (s *Server) Check(ctx context.Context, req *openfgav1.CheckRequest) (*openf
 	).Observe(float64(time.Since(start).Milliseconds()))
 
 	return res, nil
+}
+
+func (s *Server) StreamedListUsers(
+	req *openfgav1.StreamedListUsersRequest,
+	srv openfgav1.OpenFGAService_StreamedListUsersServer,
+) error {
+	ctx := srv.Context()
+
+	typesys, err := s.typesystemResolver(ctx, req.GetStoreId(), req.GetAuthorizationModelId())
+	if err != nil {
+		return err
+	}
+
+	ctx = typesystem.ContextWithTypesystem(ctx, typesys)
+
+	datastore := storagewrappers.NewCombinedTupleReader(s.datastore, req.GetContextualTuples())
+
+	listUsersQuery := listusers.NewListUsersQuery(datastore)
+	return listUsersQuery.StreamedListUsers(ctx, req, srv)
 }
 
 func (s *Server) Expand(ctx context.Context, req *openfgav1.ExpandRequest) (*openfgav1.ExpandResponse, error) {
