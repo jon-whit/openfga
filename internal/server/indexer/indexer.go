@@ -111,6 +111,7 @@ func (s *indexerServer) ExpandedReadChanges(
 
 			var subjects []*openfgav1.Object
 			if userRelation != "" {
+				time.Sleep(3 * time.Second)
 				subjectStream, err := s.openfgaClient.StreamedListUsers(ctx, &openfgav1.StreamedListUsersRequest{
 					StoreId:              req.GetStoreId(),
 					AuthorizationModelId: req.GetAuthorizationModelId(),
