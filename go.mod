@@ -2,8 +2,6 @@ module github.com/openfga/openfga
 
 go 1.21.3
 
-replace github.com/openfga/api/proto => /Users/jonwhit/github/openfga/api/proto
-
 require (
 	github.com/Masterminds/squirrel v1.5.4
 	github.com/MicahParks/keyfunc v1.9.0
@@ -25,7 +23,7 @@ require (
 	github.com/jon-whit/go-grpc-prometheus v1.4.0
 	github.com/karlseguin/ccache/v3 v3.0.3
 	github.com/oklog/ulid/v2 v2.1.0
-	github.com/openfga/api/proto v0.0.0-20231012170802-0fb8c5cda142
+	github.com/openfga/api/proto v0.0.0-20231027182310-c2476520b632
 	github.com/pressly/goose/v3 v3.15.0
 	github.com/rs/cors v1.10.1
 	github.com/sourcegraph/conc v0.3.0
