@@ -150,7 +150,16 @@ func (l *listUsersQuery) expand(
 	}
 
 	relationRewrite := relation.GetRewrite()
-	switch rewrite := relationRewrite.Userset.(type) {
+	return l.expandRewrite(ctx, req, relationRewrite, foundObjectsChan)
+}
+
+func (l *listUsersQuery) expandRewrite(
+	ctx context.Context,
+	req listUsersRequest,
+	rewrite *openfgav1.Userset,
+	foundObjectsChan chan<- *openfgav1.Object,
+) error {
+	switch rewrite := rewrite.Userset.(type) {
 	case *openfgav1.Userset_This:
 		return l.expandDirect(ctx, req, foundObjectsChan)
 	case *openfgav1.Userset_ComputedUserset:
@@ -164,6 +173,14 @@ func (l *listUsersQuery) expand(
 		}, foundObjectsChan)
 	case *openfgav1.Userset_TupleToUserset:
 		return l.expandTTU(ctx, req, rewrite, foundObjectsChan)
+	case *openfgav1.Userset_Union:
+		children := rewrite.Union.GetChild()
+		for _, childRewrite := range children {
+			if err := l.expandRewrite(ctx, req, childRewrite, foundObjectsChan); err != nil {
+				return err
+			}
+		}
+		return nil
 	default:
 		panic("unexpected userset rewrite encountered")
 	}
