@@ -610,6 +610,23 @@ func (s *Server) Check(ctx context.Context, req *openfgav1.CheckRequest) (*openf
 	return res, nil
 }
 
+func (s *Server) ListUsers(
+	ctx context.Context,
+	req *openfgav1.ListUsersRequest,
+) (*openfgav1.ListUsersResponse, error) {
+	typesys, err := s.typesystemResolver(ctx, req.GetStoreId(), req.GetAuthorizationModelId())
+	if err != nil {
+		return nil, err
+	}
+
+	ctx = typesystem.ContextWithTypesystem(ctx, typesys)
+
+	datastore := storagewrappers.NewCombinedTupleReader(s.datastore, req.GetContextualTuples())
+
+	listUsersQuery := listusers.NewListUsersQuery(datastore)
+	return listUsersQuery.ListUsers(ctx, req)
+}
+
 func (s *Server) StreamedListUsers(
 	req *openfgav1.StreamedListUsersRequest,
 	srv openfgav1.OpenFGAService_StreamedListUsersServer,
