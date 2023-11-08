@@ -456,6 +456,19 @@ func (c *LocalChecker) ResolveCheck(
 		return nil, fmt.Errorf("relation '%s' undefined for object type '%s'", relation, objectType)
 	}
 
+	userObject, userRelation := tuple.SplitObjectRelation(req.GetTupleKey().GetUser())
+	if userRelation != "" {
+		if object == userObject && relation == userRelation {
+			return &ResolveCheckResponse{
+				Allowed: true,
+				ResolutionMetadata: &ResolutionMetadata{
+					Depth:               req.GetResolutionMetadata().Depth,
+					DatastoreQueryCount: req.GetResolutionMetadata().DatastoreQueryCount,
+				},
+			}, nil
+		}
+	}
+
 	if req.VisitedPaths != nil {
 		if _, visited := req.VisitedPaths[tuple.TupleKeyToString(req.GetTupleKey())]; visited {
 			return nil, ErrCycleDetected
