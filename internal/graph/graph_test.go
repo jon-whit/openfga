@@ -282,6 +282,32 @@ func TestRelationshipEdges(t *testing.T) {
 		expected  []*RelationshipEdge
 	}{
 		{
+			name: "test_userset_edges",
+			model: `
+			model
+			  schema 1.1
+
+			type user
+
+			type group
+			  relations
+			    define member: [document#viewer]
+
+			type document
+			  relations
+			    define viewer: [user]
+			`,
+			target: typesystem.DirectRelationReference("group", "member"),
+			source: typesystem.DirectRelationReference("user", ""),
+			expected: []*RelationshipEdge{
+				{
+					Type:            DirectEdge,
+					TargetReference: typesystem.DirectRelationReference("document", "viewer"),
+					TargetReferenceInvolvesIntersectionOrExclusion: false,
+				},
+			},
+		},
+		{
 			name: "direct_edge_through_ComputedUserset_with_multiple_type_restrictions",
 			model: `model
 	schema 1.1

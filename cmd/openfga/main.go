@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/openfga/openfga/cmd"
+	"github.com/openfga/openfga/cmd/generate"
 	"github.com/openfga/openfga/cmd/migrate"
 	"github.com/openfga/openfga/cmd/run"
 	"github.com/openfga/openfga/cmd/validatemodels"
@@ -24,6 +25,9 @@ func main() {
 
 	versionCmd := cmd.NewVersionCommand()
 	rootCmd.AddCommand(versionCmd)
+
+	generateCmd := generate.NewGenerateCommand()
+	rootCmd.AddCommand(generateCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
