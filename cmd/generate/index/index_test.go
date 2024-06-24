@@ -9,6 +9,7 @@ import (
 	openfgav1 "github.com/openfga/api/proto/openfga/v1"
 	"github.com/stretchr/testify/require"
 
+	"github.com/openfga/openfga/internal/materializer"
 	"github.com/openfga/openfga/pkg/storage/memory"
 	"github.com/openfga/openfga/pkg/testutils"
 	"github.com/openfga/openfga/pkg/tuple"
@@ -275,13 +276,9 @@ func TestGenerateIndex_Functional(t *testing.T) {
 			typesys, err := typesystem.NewAndValidate(context.Background(), model)
 			require.NoError(t, err)
 
-			sql := materialize(materializationInput{
-				indexName:       fmt.Sprintf("myindex_%d", i),
-				typesys:         typesys,
-				objectType:      test.objectType,
-				relations:       test.relations,
-				subjectType:     test.subjectType,
-				subjectRelation: test.subjectRelation,
+			sql := materializer.Materialize(materializer.MaterializerInput{
+				IndexName:  fmt.Sprintf("myindex_%d", i),
+				Typesystem: typesys,
 			})
 
 			_ = sql
