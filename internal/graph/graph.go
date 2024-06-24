@@ -152,6 +152,11 @@ func New(typesystem *typesystem.TypeSystem) *RelationshipGraph {
 	}
 }
 
+// GetTypesystem returns the typesystem this RelationshipGraph was constructed from.
+func (g *RelationshipGraph) GetTypesystem() *typesystem.TypeSystem {
+	return g.typesystem
+}
+
 // GetRelationshipEdges finds all paths from a source to a target and then returns all the edges at distance 0 or 1 of the source in those paths.
 func (g *RelationshipGraph) GetRelationshipEdges(target *openfgav1.RelationReference, source *openfgav1.RelationReference) ([]*RelationshipEdge, error) {
 	return g.getRelationshipEdges(target, source, map[string]struct{}{}, resolveAllEdges)
